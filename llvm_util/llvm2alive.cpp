@@ -596,6 +596,28 @@ public:
     return true;
   }
 
+  llvm::Instruction* convertConstExprToInstruction(llvm::Value *V,
+                                                   llvm::Instruction &BeforeI) {
+    llvm::ConstantExpr *CE = dyn_cast<llvm::ConstantExpr>(V);
+    if (!CE)
+      return nullptr;
+
+    vector<llvm::Value *> newOps;
+    newOps.resize(CE->getNumOperands());
+    unsigned i = 0;
+    for (auto OI = CE->op_begin(), OE = CE->op_end(); OI != OE; ++OI) {
+      // Recursively convert nested constexprs
+      newOps[i++] = convertConstExprToInstruction(*OI, BeforeI);
+    }
+    auto I = CE->getAsInstruction();
+    for (i = 0; i < CE->getNumOperands(); i++) {
+      if (newOps[i])
+        I->setOperand(i, newOps[i]);
+    }
+    I->insertBefore(&BeforeI);
+    return I;
+  }
+
   optional<Function> run() {
     auto type = llvm_type2alive(f.getReturnType());
     if (!type)
@@ -617,6 +639,21 @@ public:
     // FIXME: this can go away once we have CFG analysis
     for (auto &bb : f) {
       Fn.getBB(value_name(bb));
+    }
+
+    // Convert constant expressions to instructions.
+    for (auto &bb : f) {
+      // TODO: constant expression on PHI nodes should be processed!
+      for (auto I = bb.getFirstNonPHI()->getIterator(), E = bb.end(); I != E;
+           ++I) {
+        unsigned i = 0;
+        for (auto OI = I->op_begin(), OE = I->op_end(); OI != OE; ++OI) {
+          if (auto *newOp = convertConstExprToInstruction(*OI, *I)) {
+            I->setOperand(i, newOp);
+          }
+          ++i;
+        }
+      }
     }
 
     for (auto &bb : f) {
