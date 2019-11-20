@@ -51,6 +51,9 @@ static void _getUsedGlobalVariables(llvm::User *U,
     else if (llvm::GlobalVariable *GV = dyn_cast<llvm::GlobalVariable>(V)) {
       GlobalVars.insert(GV);
     }
+    if (llvm::User *U2 = dyn_cast<llvm::User>(V)) {
+      _getUsedGlobalVariables(U2, Visited, GlobalVars);
+    }
   }
 }
 

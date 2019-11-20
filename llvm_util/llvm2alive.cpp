@@ -626,6 +626,10 @@ public:
     stringstream ss;
     ss << "__constexpr_" << constexpr_idx++;
     I->setName(ss.str());
+    // Temporarily insert newly created instructions at the beginning of
+    // an entry basic block, or LLVM fails with dominance checking.
+    // They are removed after being translation to Alive2 instructions is done.
+    I->insertBefore(f.getEntryBlock().getFirstNonPHI());
     convertedInsts.push_back(I);
     return I;
   }
@@ -656,6 +660,17 @@ public:
 
     // If global variables contain constexprs, run them as instructions.
     auto globals = getUsedGlobalVariables(f);
+    // Created instructions for constexprs so far
+    vector<llvm::Instruction *> constexprInsts;
+    // A helper function for removing instructions created from constexpr.
+    // This does not delete the instruction due to the existence of value_names.
+    auto replaceAndRemove = [](llvm::Instruction *inst) {
+      auto undef = llvm::UndefValue::get(inst->getType());
+      // Deletion will be done after translation of this function is done.
+      inst->replaceAllUsesWith(undef);
+      inst->removeFromParent();
+    };
+
     for (auto global : globals) {
       if (!global->hasInitializer())
         continue;
@@ -667,12 +682,17 @@ public:
 
       auto value = convertConstExprToInstruction(CE, insts);
       assert(value != nullptr);
-      insts.push_back(new llvm::StoreInst(value, global));
+      auto store = new llvm::StoreInst(value, global,
+                                       f.getEntryBlock().getFirstNonPHI());
       for (auto i : insts)
         Init.addInstr(global->getName(), visit(*i));
+      Init.addInstr(global->getName(), visit(*store));
 
+      // Delete the store.
+      store->eraseFromParent();
       for (auto I = insts.rbegin(), E = insts.rend(); I != E; ++I)
-        (*I)->deleteValue();
+        replaceAndRemove(*I);
+      constexprInsts.insert(constexprInsts.end(), insts.begin(), insts.end());
     }
 
     // Process function body.
@@ -706,16 +726,17 @@ public:
         insts.pop_back();
         // Now remove insts created from constexpr.
         if (!insts.empty()) {
-          // This function is not used again, so put undef
-          auto undef = llvm::UndefValue::get(insts.back()->getType());
-          for (auto II = insts.begin(), IE = insts.end(); II != IE; ++II) {
-            llvm::Instruction *inst = *II;
-            inst->replaceAllUsesWith(undef);
-            inst->deleteValue();
-          }
+          for (auto II = insts.begin(), IE = insts.end(); II != IE; ++II)
+            replaceAndRemove(*II);
+          constexprInsts.insert(constexprInsts.end(), insts.begin(),
+                                insts.end());
         }
       }
     }
+
+    // Now free all instructions created from constexpr
+    for (auto i : constexprInsts)
+      i->deleteValue();
 
     return { { move(Init), move(Fn) } };
   }
