@@ -11,6 +11,7 @@
 #include <ostream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace smt { class FunctionExpr; }
 
@@ -122,6 +123,8 @@ class Memory {
   smt::FunctionExpr local_blk_size;
   smt::FunctionExpr local_blk_kind;
 
+  std::vector<unsigned> usedGlobalBids;
+
   smt::expr mk_val_array() const;
   smt::expr mk_liveness_array() const;
 
@@ -145,8 +148,7 @@ public:
   // If bid is not specified, it creates a fresh block id by increasing
   // last_bid.
   // If bid is specified, the bid is used, and last_bid is not increased.
-  // In this case, it is caller's responsibility to give a unique bid, and
-  // bumpLastBid() should be called in advance to correctly do this.
+  // In this case, it is caller's responsibility to give a unique bid.
   // The newly assigned bid is stored to bid_out if bid_out != nullptr.
   smt::expr alloc(const smt::expr &size, unsigned align, BlockKind blockKind,
                   std::optional<unsigned> bid = std::nullopt,

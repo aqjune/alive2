@@ -677,6 +677,7 @@ expr Memory::alloc(const expr &size, unsigned align, BlockKind blockKind,
       state->addPre(p.get_address().add_no_uoverflow(p.block_size()));
 
   } else {
+    usedGlobalBids.push_back(bid);
     state->addAxiom(blockKind == CONSTGLOBAL ? p.is_readonly()
                                              : !p.is_readonly());
     // The memory block was initially alive.
@@ -801,9 +802,20 @@ expr Memory::refined(const Memory &other) const {
   if (memory_unused())
     return true;
 
+  // Find global variables that are only used at src but not used at tgt.
+  auto bids = usedGlobalBids, bids_tgt = other.usedGlobalBids;
+  sort(bids.begin(), bids.end());
+  sort(bids_tgt.begin(), bids_tgt.end());
+  auto pred = [&bids_tgt](auto bid) {
+    return binary_search(bids_tgt.begin(), bids_tgt.end(), bid);
+  };
+  bids.erase(remove_if(bids.begin(), bids.end(), pred), bids.end());
   Pointer p(*this, "#idx");
   Pointer q(other, p());
-  return p.block_refined(q);
+  expr bid_cond = true;
+  for (auto bid : bids)
+    bid_cond &= p.get_short_bid() != bid;
+  return bid_cond.implies(p.block_refined(q));
 }
 
 Memory Memory::mkIf(const expr &cond, const Memory &then, const Memory &els) {
