@@ -706,33 +706,62 @@ void Memory::free(const expr &ptr) {
 }
 
 void Memory::store(const expr &p, const StateValue &v, const Type &type,
-                   unsigned align) {
+                   unsigned align, bool deref_check) {
   assert(!memory_unused());
-  vector<Byte> bytes = valueToBytes(v, type, *this);
-
   Pointer ptr(*this, p);
-  ptr.is_dereferenceable(bytes.size(), align, !state->isInitializationPhase());
-  for (unsigned i = 0, e = bytes.size(); i < e; ++i) {
-    auto ptr_i = little_endian ? (ptr + i) : (ptr + (e - i - 1));
-    store(ptr_i, bytes[i](), local_block_val, non_local_block_val);
+  bool do_write = !state->isInitializationPhase();
+
+  if (type.isAggregateType()) {
+    auto aty = dynamic_cast<const AggregateType *>(&type);
+    if (deref_check)
+      ptr.is_dereferenceable(aty->bytesize(), align, do_write);
+
+    for (unsigned i = 0; i < aty->numElementsConst(); ++i) {
+      auto ptr_i = ptr + aty->getByteOffset(i);
+      store(ptr_i(), aty->extract(v, i), aty->getChild(i), 1, false);
+    }
+  } else {
+    vector<Byte> bytes = valueToBytes(v, type, *this);
+    if (deref_check)
+      ptr.is_dereferenceable(bytes.size(), align, do_write);
+
+    for (unsigned i = 0, e = bytes.size(); i < e; ++i) {
+      auto ptr_i = little_endian ? (ptr + i) : (ptr + (e - i - 1));
+      store(ptr_i, bytes[i](), local_block_val, non_local_block_val);
+    }
   }
 }
 
-StateValue Memory::load(const expr &p, const Type &type, unsigned align) {
+StateValue Memory::load(const expr &p, const Type &type, unsigned align,
+                        bool deref_check) {
   assert(!memory_unused());
-  auto bitsize = type.isPtrType() ? bits_size_t : type.bits();
-  unsigned bytesize = divide_up(bitsize, 8);
 
   Pointer ptr(*this, p);
-  ptr.is_dereferenceable(bytesize, align, false);
+  if (type.isAggregateType()) {
+    auto aty = dynamic_cast<const AggregateType *>(&type);
+    vector<StateValue> member_vals;
+    if (deref_check)
+      ptr.is_dereferenceable(aty->bytesize(), align, false);
 
-  vector<Byte> loadedBytes;
-  for (unsigned i = 0; i < bytesize; ++i) {
-    auto ptr_i = little_endian ? (ptr + i) : (ptr + (bytesize - i - 1));
-    loadedBytes.emplace_back(*this, ::load(ptr_i, local_block_val,
-                                           non_local_block_val));
+    for (unsigned i = 0; i < aty->numElementsConst(); ++i) {
+      auto ptr_i = ptr + aty->getByteOffset(i);
+      member_vals.push_back(load(ptr_i(), aty->getChild(i), 1, false));
+    }
+    return aty->aggregateVals(member_vals);
+  } else {
+    auto bitsize = type.isPtrType() ? bits_size_t : type.bits();
+    unsigned bytesize = divide_up(bitsize, 8);
+    vector<Byte> loadedBytes;
+    if (deref_check)
+      ptr.is_dereferenceable(bytesize, align, false);
+
+    for (unsigned i = 0; i < bytesize; ++i) {
+      auto ptr_i = little_endian ? (ptr + i) : (ptr + (bytesize - i - 1));
+      loadedBytes.emplace_back(*this, ::load(ptr_i, local_block_val,
+                                            non_local_block_val));
+    }
+    return bytesToValue(loadedBytes, type);
   }
-  return bytesToValue(loadedBytes, type);
 }
 
 void Memory::memset(const expr &p, const StateValue &val, const expr &bytesize,

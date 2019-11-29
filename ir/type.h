@@ -231,13 +231,16 @@ public:
 class AggregateType : public Type {
 protected:
   std::vector<Type*> children;
+  // (byte offset, byte width, is padding)
+  std::vector<std::tuple<unsigned, unsigned, bool>> layout;
   std::vector<std::unique_ptr<SymbolicType>> sym;
   unsigned elements;
+  unsigned bytesz; // size of this type, including padding
   bool defined = false;
 
   AggregateType(std::string &&name, bool symbolic = true);
-  AggregateType(std::string &&name, std::vector<Type*> &&children)
-    : Type(std::move(name)), children(std::move(children)) {}
+  AggregateType(std::string &&name, std::vector<Type*> &&children,
+                std::vector<std::tuple<unsigned, unsigned, bool>> &&layout);
 
 public:
   smt::expr numElements() const;
@@ -246,6 +249,9 @@ public:
   StateValue aggregateVals(const std::vector<StateValue> &vals) const;
   IR::StateValue extract(const IR::StateValue &val, unsigned index) const;
   Type& getChild(unsigned index) const { return *children[index]; }
+  unsigned getByteOffset(unsigned i) const { return std::get<0>(layout[i]); }
+  unsigned isPadding(unsigned index) const;
+  unsigned bytesize() const { return bytesz; }
 
   unsigned bits() const override;
   IR::StateValue getDummyValue(bool non_poison) const override;
@@ -300,7 +306,8 @@ public:
 class StructType final : public AggregateType {
 public:
   StructType(std::string &&name) : AggregateType(std::move(name)) {}
-  StructType(std::string &&name, std::vector<Type*> &&children);
+  StructType(std::string &&name, std::vector<Type*> &&children,
+             std::vector<std::tuple<unsigned, unsigned, bool>> &&layout);
 
   bool isStructType() const override;
   smt::expr enforceStructType() const override;

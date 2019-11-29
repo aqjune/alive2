@@ -282,8 +282,11 @@ static Type& get_overflow_type(Type &type) {
   auto p = overflow_aggregate_types.try_emplace(&type);
   auto &st = p.first->second;
   if (p.second)
+    // TODO: Knowing exact layout of { i1, ity } needs data layout.
     st = make_unique<StructType>("structty_" + to_string(struct_num++),
-           initializer_list<Type*>({ &type, int_types[1].get() }));
+           initializer_list<Type*>({ &type, int_types[1].get() }),
+           initializer_list<tuple<unsigned, unsigned, bool>>({
+              { 0, 1, false }, {1, (int_types[1]->bits() + 7) / 8, false} }));
   return *st.get();
 }
 

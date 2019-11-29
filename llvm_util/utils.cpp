@@ -97,15 +97,38 @@ Type* llvm_type2alive(const llvm::Type *ty) {
   case llvm::Type::StructTyID: {
     auto &cache = type_cache[ty];
     if (!cache) {
+      auto strty = cast<llvm::StructType>(ty);
+      auto layout = DL->getStructLayout(const_cast<llvm::StructType *>(strty));
       vector<Type*> elems;
-      for (auto e : cast<llvm::StructType>(ty)->elements()) {
-        if (auto ty = llvm_type2alive(e))
+      vector<tuple<unsigned, unsigned, bool>> offsets;
+      for (unsigned i = 0; i < strty->getNumElements(); ++i) {
+        auto e = strty->getElementType(i);
+        unsigned ofs = layout->getElementOffset(i);
+        unsigned sz = DL->getTypeStoreSize(e); // does not include padding
+
+        if (auto ty = llvm_type2alive(e)) {
           elems.push_back(ty);
-        else
+          offsets.push_back({ ofs, sz, false });
+        } else
           return nullptr;
+
+        unsigned ofs_next = i + 1 == strty->getNumElements() ?
+                DL->getTypeAllocSize(const_cast<llvm::StructType *>(strty)) :
+                layout->getElementOffset(i + 1);
+        assert(ofs + sz <= ofs_next);
+
+        if (ofs_next != ofs + sz) {
+          unsigned padsz = 8 * (ofs_next - ofs - sz);
+          auto padding_ty = llvm::IntegerType::get(strty->getContext(), padsz);
+          if (auto ty = llvm_type2alive(padding_ty)) {
+            elems.push_back(ty);
+            offsets.push_back({ ofs + sz, padsz / 8, true });
+          } else
+            return nullptr;
+        }
       }
       cache = make_unique<StructType>("ty_" + to_string(type_id_counter++),
-                                      move(elems));
+                                      move(elems), move(offsets));
     }
     return cache.get();
   }
@@ -225,11 +248,20 @@ Value* get_operand(llvm::Value *v,
 
   if (auto cnst = dyn_cast<llvm::ConstantAggregate>(v)) {
     vector<Value*> vals;
-    for (auto I = cnst->op_begin(), E = cnst->op_end(); I != E; ++I) {
-      if (auto op = get_operand(*I, constexpr_conv))
-        vals.emplace_back(op);
-      else
-        return nullptr;
+    auto aty = dynamic_cast<AggregateType *>(ty);
+    unsigned opi = 0;
+    for (unsigned i = 0; i < aty->numElementsConst(); ++i) {
+      if (unsigned paddingsz = aty->isPadding(i)) {
+        auto padty = llvm::IntegerType::get(cnst->getContext(), paddingsz * 8);
+        vals.emplace_back(get_operand(llvm::ConstantInt::get(padty, 0),
+                                      constexpr_conv));
+      } else {
+        if (auto op = get_operand(cnst->getOperand(opi), constexpr_conv))
+          vals.emplace_back(op);
+        else
+          return nullptr;
+        ++opi;
+      }
     }
     auto val = make_unique<AggregateConst>(*ty, move(vals));
     auto ret = val.get();

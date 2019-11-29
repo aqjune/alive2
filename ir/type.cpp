@@ -595,9 +595,20 @@ AggregateType::AggregateType(string &&name, bool symbolic)
   }
 }
 
+AggregateType::AggregateType(string &&name, vector<Type*> &&vchildren,
+                             vector<tuple<unsigned, unsigned, bool>> &&vlayout)
+: Type(move(name)), children(move(vchildren)), layout(move(vlayout)) {
+  assert(children.size() == layout.size());
+  bytesz = get<0>(layout.back()) + get<1>(layout.back());
+}
+
 expr AggregateType::numElements() const {
   return defined ? expr::mkUInt(elements, var_vector_elements) :
                    var("elements", var_vector_elements);
+}
+
+unsigned AggregateType::isPadding(unsigned index) const {
+  return get<2>(layout[index]) ? get<1>(layout[index]) : 0;
 }
 
 StateValue AggregateType::aggregateVals(const vector<StateValue> &vals) const {
@@ -771,6 +782,21 @@ VectorType::VectorType(string &&name, unsigned elements, Type &elementTy)
   this->elements = elements;
   defined = true;
   children.resize(elements, &elementTy);
+
+  layout.resize(elements);
+  unsigned elemsz = 0;
+  if (elementTy.isPtrType())
+    elemsz = bits_size_t;
+  else if (elementTy.isIntType() || elementTy.isFloatType())
+    elemsz = elementTy.bits();
+  else {
+    assert("Only pointer / integer / float types are allowed for vector elements"
+           && false);
+  }
+  for (unsigned i = 0; i < elements; ++i)
+    // TODO: elemsz with non-multiple of 8 is not supported.
+    layout[i] = { i * (elemsz / 8), elemsz / 8, false };
+  bytesz = elemsz * elements / 8;
 }
 
 StateValue VectorType::extract(const StateValue &vector,
@@ -848,8 +874,9 @@ void VectorType::print(ostream &os) const {
 }
 
 
-StructType::StructType(string &&name, vector<Type*> &&children)
-  : AggregateType(move(name), move(children)) {
+StructType::StructType(string &&name, vector<Type*> &&children,
+                       vector<tuple<unsigned, unsigned, bool>> &&layout)
+  : AggregateType(move(name), move(children), move(layout)) {
   elements = this->children.size();
   defined = true;
 }
