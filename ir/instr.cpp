@@ -1818,13 +1818,13 @@ void Free::rauw(const Value &what, Value &with) {
 }
 
 void Free::print(std::ostream &os) const {
-  os << "free " << *ptr;
+  os << "free " << *ptr << (heaponly ? "" : " unrestricted");
 }
 
 StateValue Free::toSMT(State &s) const {
   auto &[p, np] = s[*ptr];
   s.addUB(np);
-  s.getMemory().free(p);
+  s.getMemory().free(p, heaponly);
   return {};
 }
 
@@ -1833,7 +1833,7 @@ expr Free::getTypeConstraints(const Function &f) const {
 }
 
 unique_ptr<Instr> Free::dup(const string &suffix) const {
-  return make_unique<Free>(*ptr);
+  return make_unique<Free>(*ptr, heaponly);
 }
 
 

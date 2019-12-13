@@ -165,7 +165,7 @@ public:
                   unsigned *bid_out = nullptr,
                   const smt::expr &precond = true);
 
-  void free(const smt::expr &ptr);
+  void free(const smt::expr &ptr, bool heaponly);
 
   void store(const smt::expr &ptr, const StateValue &val, const Type &type,
              unsigned align, bool deref_check = true);

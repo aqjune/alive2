@@ -357,6 +357,27 @@ public:
     if (!ty)
       return error(i);
 
+    // If the alloca has any lifetime.start use, the alloca is created later.
+    bool has_lifetime_start = false;
+    auto lifetime_chk = [](llvm::User *U) -> bool {
+      auto I = llvm::dyn_cast<llvm::IntrinsicInst>(U);
+      return I && I->getIntrinsicID() == llvm::Intrinsic::lifetime_start;
+    };
+    for (auto I = i.user_begin(), E = i.user_end();
+         I != E && !has_lifetime_start; ++I) {
+      has_lifetime_start |= lifetime_chk(*I);
+      if (auto BI = llvm::dyn_cast<llvm::BitCastInst>(*I)) {
+        has_lifetime_start |= find_if(BI->user_begin(), BI->user_end(),
+                                      lifetime_chk) != BI->user_end();
+      }
+    }
+
+    if (has_lifetime_start)
+      // Initialize the pointer as undef
+      RETURN_IDENTIFIER(make_unique<UnaryOp>(*ty,
+          value_name(i) + "__undefined",
+          *get_operand(llvm::UndefValue::get(i.getType())), UnaryOp::Copy));
+
     // FIXME: size bits shouldn't be a constant
     auto size = make_intconst(DL().getTypeAllocSize(i.getAllocatedType()), 64);
     RETURN_IDENTIFIER(make_unique<Alloc>(*ty, value_name(i), *size,
@@ -568,6 +589,34 @@ public:
       }
       RETURN_IDENTIFIER(make_unique<TernaryOp>(*ty, value_name(i), *a, *b, *c,
                                                op));
+    }
+    case llvm::Intrinsic::lifetime_start:
+    {
+      llvm::Value *the_op = i.getOperand(1);
+      if (auto bc = llvm::dyn_cast<llvm::BitCastInst>(the_op))
+        the_op = bc->getOperand(0);
+      auto alloca = llvm::dyn_cast<llvm::AllocaInst>(the_op);
+      // FIXME: size bits shouldn't be a constant
+      auto size = make_intconst(DL().getTypeAllocSize(
+          alloca->getAllocatedType()), 64);
+
+      remove_identifier(*alloca);
+      auto ret = make_unique<Alloc>(*llvm_type2alive(alloca->getType()),
+          value_name(*alloca), *size,
+          pref_alignment(*alloca, alloca->getAllocatedType()));
+      add_identifier(*alloca, *ret.get());
+
+      return ret;
+    }
+    case llvm::Intrinsic::lifetime_end:
+    {
+      llvm::Value *the_op = i.getOperand(1);
+      if (auto bc = llvm::dyn_cast<llvm::BitCastInst>(the_op))
+        the_op = bc->getOperand(0);
+      auto alloca = llvm::dyn_cast<llvm::AllocaInst>(the_op);
+      assert(alloca);
+      auto v = get_operand(alloca);
+      RETURN_IDENTIFIER(make_unique<Free>(*v, false));
     }
 
     // do nothing intrinsics

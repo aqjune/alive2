@@ -367,6 +367,12 @@ void add_identifier(const llvm::Value &llvm, Value &v) {
 }
 
 
+void remove_identifier(const llvm::Value &llvm) {
+  assert(identifiers.find(&llvm) != identifiers.end());
+  identifiers.erase(&llvm);
+}
+
+
 #define PRINT(T)                                \
 ostream& operator<<(ostream &os, const T &x) {  \
   string str;                                   \

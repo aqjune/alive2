@@ -775,12 +775,12 @@ expr Memory::alloc(const expr &size, unsigned align, BlockKind blockKind,
   return expr::mkIf(allocated, p(), Pointer::mkNullPointer(*this)());
 }
 
-void Memory::free(const expr &ptr) {
+void Memory::free(const expr &ptr, bool heaponly) {
   assert(!memory_unused());
   Pointer p(*this, ptr);
-  state->addUB(p.isNull() || (p.get_offset() == 0 &&
-                              p.is_block_alive() &&
-                              p.get_alloc_type() == Pointer::MALLOC));
+  auto cond = p.get_offset() == 0 && p.is_block_alive() &&
+              (p.get_alloc_type() == Pointer::MALLOC || !heaponly);
+  state->addUB(p.isNull() || cond);
   store(p, false, local_block_liveness, non_local_block_liveness, true);
 
   // optimization: if this is a local block, remove all associated information
