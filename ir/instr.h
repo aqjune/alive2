@@ -372,9 +372,12 @@ public:
 class Alloc final : public Instr {
   Value *size;
   unsigned align;
+  bool writable;
 public:
-  Alloc(Type &type, std::string &&name, Value &size, unsigned align)
-    : Instr(type, std::move(name)), size(&size), align(align) {}
+  Alloc(Type &type, std::string &&name, Value &size, unsigned align,
+        bool writable)
+    : Instr(type, std::move(name)), size(&size), align(align),
+      writable(writable) {}
 
   std::vector<Value*> operands() const override;
   void rauw(const Value &what, Value &with) override;
@@ -488,6 +491,22 @@ public:
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
 };
 
+// Updates ptr's memory block as writable/readonly.
+// Works for local blocks only.
+class SetWritable final : public Instr {
+  Value *ptr;
+  bool writable;
+public:
+  SetWritable(Value &ptr, bool writable)
+    : Instr(Type::voidTy, "setwritable"), ptr(&ptr), writable(writable) {}
+
+  std::vector<Value*> operands() const override;
+  void rauw(const Value &what, Value &with) override;
+  void print(std::ostream &os) const override;
+  StateValue toSMT(State &s) const override;
+  smt::expr getTypeConstraints(const Function &f) const override;
+  std::unique_ptr<Instr> dup(const std::string &suffix) const override;
+};
 
 class Memset final : public Instr {
   Value *ptr, *val, *bytes;
@@ -496,6 +515,10 @@ public:
   Memset(Value &ptr, Value &val, Value &bytes, unsigned align)
     : Instr(Type::voidTy, "memset"), ptr(&ptr), val(&val), bytes(&bytes),
             align(align) {}
+  // Initialize ptr's block as poison
+  Memset(Value &ptr)
+    : Instr(Type::voidTy, "initialize"), ptr(&ptr), val(nullptr),
+      bytes(nullptr), align(1) {}
 
   std::vector<Value*> operands() const override;
   void rauw(const Value &what, Value &with) override;

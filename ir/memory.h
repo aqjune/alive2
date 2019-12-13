@@ -118,8 +118,11 @@ class Memory {
   smt::expr non_local_block_val;  // array: (bid, offset) -> Byte
   smt::expr local_block_val;
 
-  smt::expr non_local_block_liveness; // array: bid -> bool
+  // array: bid -> bool
+  smt::expr non_local_block_liveness;
+  smt::expr non_local_block_writable;
   smt::expr local_block_liveness;
+  smt::expr local_block_writable;
 
   smt::expr local_avail_space; // available space in local block area.
 
@@ -128,7 +131,6 @@ class Memory {
   smt::FunctionExpr local_blk_align;
   smt::FunctionExpr local_blk_kind;
 
-  smt::FunctionExpr non_local_blk_writable;
   smt::FunctionExpr non_local_blk_size;
   smt::FunctionExpr non_local_blk_align;
   smt::FunctionExpr non_local_blk_kind;
@@ -141,7 +143,7 @@ class Memory {
 
 public:
   enum BlockKind {
-    HEAP, STACK, GLOBAL, CONSTGLOBAL
+    HEAP, STACK, GLOBAL
   };
 
   Memory(State &state);
@@ -162,9 +164,9 @@ public:
   // bumpLastBid() should be called in advance to correctly do this.
   // The newly assigned bid is stored to bid_out if bid_out != nullptr.
   smt::expr alloc(const smt::expr &size, unsigned align, BlockKind blockKind,
+                  bool is_writable = true,
                   std::optional<unsigned> bid = std::nullopt,
-                  unsigned *bid_out = nullptr,
-                  const smt::expr &precond = true);
+                  unsigned *bid_out = nullptr, const smt::expr &precond = true);
 
   void free(const smt::expr &ptr);
 
@@ -178,6 +180,11 @@ public:
   void memcpy(const smt::expr &dst, const smt::expr &src,
               const smt::expr &bytesize, unsigned align_dst, unsigned align_src,
               bool move);
+
+  // Updates ptr's memory block as writable/readonly.
+  void setWritable(const smt::expr &ptr, bool writable);
+  // Initializes ptr's memory block with poison.
+  void initialize(const smt::expr &ptr);
 
   smt::expr ptr2int(const smt::expr &ptr);
   smt::expr int2ptr(const smt::expr &val);

@@ -477,8 +477,12 @@ expr Pointer::block_refined(const Pointer &other) const {
 }
 
 expr Pointer::is_writable() const {
-  return get_value("blk_writable", FunctionExpr(true), m.non_local_blk_writable,
-                   true);
+  auto bid = get_short_bid();
+  expr non_local;
+
+  return expr::mkIf(is_local(),
+                    m.local_block_writable.load(bid),
+                    m.non_local_block_writable.load(bid));
 }
 
 Pointer Pointer::mkNullPointer(const Memory &m) {
@@ -567,6 +571,9 @@ Memory::Memory(State &state) : state(&state) {
 
   non_local_block_val = mk_val_array();
   non_local_block_liveness = mk_liveness_array();
+  // nonlocal blocks are writable by default.
+  non_local_block_writable =
+    expr::mkLambda({ expr::mkVar("#bid0", bits_for_bid - 1) }, true);
   {
     auto idx = Pointer(*this, "#idx").short_ptr();
 
@@ -581,13 +588,16 @@ Memory::Memory(State &state) : state(&state) {
     }
 
     // initialize all local blocks as non-pointer, poison value
-    // This is okay because loading a pointer as non-pointer is also poison.
+    // This is okay because loading a non-pointer as pointer is also poison.
     local_block_val = expr::mkLambda({ idx }, Byte::mkPoisonByte(*this)());
   }
 
   // all local blocks are dead in the beginning
   local_block_liveness
     = expr::mkLambda({ expr::mkVar("#bid0", bits_for_bid - 1) }, false);
+  // all local blocks are writable by default
+  local_block_writable
+    = expr::mkLambda({ expr::mkVar("#bid0", bits_for_bid - 1) }, true);
 
   // A memory space is separated into non-local area / local area.
   // Non-local area is the lower half of memory (to include null pointer),
@@ -603,7 +613,7 @@ Memory::Memory(State &state) : state(&state) {
   local_avail_space = expr::mkVar("local_avail_space", bits_size_t - 1);
 
   // Initialize a memory block for null pointer.
-  alloc(expr::mkUInt(0, bits_size_t), 1, GLOBAL, 0, nullptr, false);
+  alloc(expr::mkUInt(0, bits_size_t), 1, GLOBAL, true, 0, nullptr, false);
 
   assert(bits_for_offset <= bits_size_t);
 }
@@ -681,12 +691,12 @@ pair<expr, expr> Memory::mkUndefInput() const {
 }
 
 expr Memory::alloc(const expr &size, unsigned align, BlockKind blockKind,
-                   optional<unsigned> bidopt, unsigned *bid_out,
-                   const expr &precond) {
+                   bool is_writable, optional<unsigned> bidopt,
+                   unsigned *bid_out, const expr &precond) {
   assert(!memory_unused());
 
   // Produce a local block if blockKind is heap or stack.
-  bool is_local = blockKind != GLOBAL && blockKind != CONSTGLOBAL;
+  bool is_local = blockKind != GLOBAL;
 
   auto &last_bid = is_local ? last_local_bid : last_nonlocal_bid;
   unsigned bid = bidopt ? *bidopt : last_bid;
@@ -756,19 +766,18 @@ expr Memory::alloc(const expr &size, unsigned align, BlockKind blockKind,
                                    local_avail_space - size_upperbound_trunc,
                                    local_avail_space);
 
+    local_block_writable = local_block_writable.store(short_bid, is_writable);
   } else {
-    state->addAxiom(blockKind == CONSTGLOBAL ? !p.is_writable()
-                                             : p.is_writable());
     non_local_block_liveness
       = non_local_block_liveness.store(short_bid, allocated);
+    non_local_block_writable
+      = non_local_block_writable.store(short_bid, is_writable);
     state->addAxiom(p.block_size() == size_zext);
     state->addAxiom(p.is_aligned(align, true));
     state->addAxiom(p.get_alloc_type() == alloc_ty);
 
     if (align_bits && observes_addresses())
       state->addAxiom(p.get_address().extract(align_bits - 1, 0) == 0);
-
-    non_local_blk_writable.add(short_bid, blockKind != CONSTGLOBAL);
   }
 
   (is_local ? local_blk_size : non_local_blk_size)
@@ -935,6 +944,19 @@ void Memory::memcpy(const expr &d, const expr &s, const expr &bytesize,
   }
 }
 
+void Memory::setWritable(const expr &ptr, bool writable) {
+  Pointer p(*this, ptr);
+  store(p, writable, local_block_writable, non_local_block_writable, true);
+}
+
+void Memory::initialize(const expr &ptr) {
+  Pointer p(*this, ptr);
+  Pointer idx(*this, "#idx", p.is_local());
+  store_lambda(idx, idx.get_short_bid() == p.get_short_bid(),
+               Byte::mkPoisonByte(*this)(), local_block_val,
+               non_local_block_val);
+}
+
 expr Memory::ptr2int(const expr &ptr) {
   assert(!memory_unused());
   return Pointer(*this, ptr).get_address();
@@ -973,13 +995,17 @@ Memory Memory::mkIf(const expr &cond, const Memory &then, const Memory &els) {
                                             els.local_block_val);
   ret.non_local_block_liveness = expr::mkIf(cond, then.non_local_block_liveness,
                                             els.non_local_block_liveness);
+  ret.non_local_block_writable     = expr::mkIf(cond,
+                                                then.non_local_block_writable,
+                                                els.non_local_block_writable);
   ret.local_block_liveness     = expr::mkIf(cond, then.local_block_liveness,
                                             els.local_block_liveness);
+  ret.local_block_writable     = expr::mkIf(cond, then.local_block_writable,
+                                            els.local_block_writable);
   ret.local_blk_addr.add(els.local_blk_addr);
   ret.local_blk_size.add(els.local_blk_size);
   ret.local_blk_align.add(els.local_blk_align);
   ret.local_blk_kind.add(els.local_blk_kind);
-  ret.non_local_blk_writable.add(els.non_local_blk_writable);
   ret.non_local_blk_size.add(els.non_local_blk_size);
   ret.non_local_blk_align.add(els.non_local_blk_align);
   ret.non_local_blk_kind.add(els.non_local_blk_kind);
@@ -993,15 +1019,15 @@ bool Memory::operator<(const Memory &rhs) const {
     tie(did_pointer_store, non_local_block_val, local_block_val,
         non_local_block_liveness, local_block_liveness, local_blk_addr,
         local_blk_size, local_blk_align, local_blk_kind, local_avail_space,
-        non_local_blk_writable, non_local_blk_size, non_local_blk_align,
-        non_local_blk_kind) <
+        local_block_writable, non_local_blk_size, non_local_blk_align,
+        non_local_blk_kind, non_local_block_writable) <
     tie(rhs.did_pointer_store, rhs.non_local_block_val, rhs.local_block_val,
         rhs.non_local_block_liveness, rhs.local_block_liveness,
         rhs.local_blk_addr, rhs.local_blk_size, rhs.local_blk_align,
         rhs.local_blk_kind,
-        rhs.local_avail_space, rhs.non_local_blk_writable,
+        rhs.local_avail_space, rhs.local_block_writable,
         rhs.non_local_blk_size, rhs.non_local_blk_align,
-        rhs.non_local_blk_kind);
+        rhs.non_local_blk_kind, rhs.non_local_block_writable);
 }
 
 }

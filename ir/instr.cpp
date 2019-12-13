@@ -1706,12 +1706,14 @@ void Alloc::rauw(const Value &what, Value &with) {
 
 void Alloc::print(std::ostream &os) const {
   os << getName() << " = alloca " << *size << ", align " << align;
+  if (!writable)
+    os << ", readonly";
 }
 
 StateValue Alloc::toSMT(State &s) const {
   auto &[sz, np] = s[*size];
   auto &m = s.getMemory();
-  auto p = m.alloc(sz, align, Memory::STACK);
+  auto p = m.alloc(sz, align, Memory::STACK, writable);
   // Alloca cannot be null; when OOM, the program halts with stack overflow.
   s.addUB(np && p != Pointer::mkNullPointer(m)());
   return { move(p), true };
@@ -1724,7 +1726,8 @@ expr Alloc::getTypeConstraints(const Function &f) const {
 }
 
 unique_ptr<Instr> Alloc::dup(const string &suffix) const {
-  return make_unique<Alloc>(getType(), getName() + suffix, *size, align);
+  return make_unique<Alloc>(getType(), getName() + suffix, *size, align,
+                            writable);
 }
 
 
@@ -1784,7 +1787,7 @@ StateValue Calloc::toSMT(State &s) const {
 
   // TODO: check calloc align.
   expr size = nm * sz;
-  auto p = s.getMemory().alloc(size, 8, Memory::HEAP, std::nullopt,
+  auto p = s.getMemory().alloc(size, 8, Memory::HEAP, true, std::nullopt,
                                nullptr, nm.mul_no_uoverflow(sz));
 
   expr is_null = p == Pointer::mkNullPointer(s.getMemory())();
@@ -2000,7 +2003,37 @@ unique_ptr<Instr> Store::dup(const string &suffix) const {
 }
 
 
+vector<Value*> SetWritable::operands() const {
+  return { ptr };
+}
+
+void SetWritable::rauw(const Value &what, Value &with) {
+  RAUW(ptr);
+}
+
+void SetWritable::print(std::ostream &os) const {
+  os << "setwritable " << *ptr << ", " << writable;
+}
+
+StateValue SetWritable::toSMT(State &s) const {
+  auto &[p, np] = s[*ptr];
+  s.addUB(np);
+  s.getMemory().setWritable(p, writable);
+  return {};
+}
+
+expr SetWritable::getTypeConstraints(const Function &f) const {
+  return ptr->getType().enforcePtrType();
+}
+
+unique_ptr<Instr> SetWritable::dup(const string &suffix) const {
+  return make_unique<SetWritable>(*ptr, writable);
+}
+
+
 vector<Value*> Memset::operands() const {
+  if (!val)
+    return { ptr };
   return { ptr, val, bytes };
 }
 
@@ -2011,26 +2044,38 @@ void Memset::rauw(const Value &what, Value &with) {
 }
 
 void Memset::print(ostream &os) const {
-  os << "memset " << *ptr << " align " << align << ", " << *val
-     << ", " << *bytes;
+  if (val)
+    os << "memset " << *ptr << " align " << align << ", " << *val
+      << ", " << *bytes;
+  else
+    os << "initialize_block " << *ptr;
 }
 
 StateValue Memset::toSMT(State &s) const {
   auto &[vptr, np_ptr] = s[*ptr];
-  auto &[vbytes, np_bytes] = s[*bytes];
-  s.addUB(vbytes.ugt(0).implies(np_ptr));
-  s.addUB(np_bytes);
-  s.getMemory().memset(vptr, s[*val].zextOrTrunc(8), vbytes, align);
+
+  if (val) {
+    assert(bytes);
+    auto &[vbytes, np_bytes] = s[*bytes];
+    s.addUB(vbytes.ugt(0).implies(np_ptr));
+    s.addUB(np_bytes);
+    s.getMemory().memset(vptr, s[*val].zextOrTrunc(8), vbytes, align);
+  } else {
+    s.addUB(np_ptr);
+    s.getMemory().initialize(vptr);
+  }
   return {};
 }
 
 expr Memset::getTypeConstraints(const Function &f) const {
   return ptr->getType().enforcePtrType() &&
-         val->getType().enforceIntType() &&
-         bytes->getType().enforceIntType();
+         (val ? val->getType().enforceIntType() : true) &&
+         (bytes ? bytes->getType().enforceIntType() : true);
 }
 
 unique_ptr<Instr> Memset::dup(const string &suffix) const {
+  if (!val)
+    return make_unique<Memset>(*ptr);
   return make_unique<Memset>(*ptr, *val, *bytes, align);
 }
 

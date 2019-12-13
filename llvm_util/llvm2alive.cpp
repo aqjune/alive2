@@ -357,10 +357,27 @@ public:
     if (!ty)
       return error(i);
 
+    // If the alloca has any lifetime.start use, the alloca is initially set
+    // as read-only.
+    bool has_lifetime_start = false;
+    auto lifetime_chk = [](llvm::User *U) -> bool {
+      auto I = llvm::dyn_cast<llvm::IntrinsicInst>(U);
+      return I && I->getIntrinsicID() == llvm::Intrinsic::lifetime_start;
+    };
+    for (auto I = i.user_begin(), E = i.user_end();
+         I != E && !has_lifetime_start; ++I) {
+      has_lifetime_start |= lifetime_chk(*I);
+      if (auto BI = llvm::dyn_cast<llvm::BitCastInst>(*I)) {
+        has_lifetime_start |= find_if(BI->user_begin(), BI->user_end(),
+                                      lifetime_chk) != BI->user_end();
+      }
+    }
+
     // FIXME: size bits shouldn't be a constant
     auto size = make_intconst(DL().getTypeAllocSize(i.getAllocatedType()), 64);
     RETURN_IDENTIFIER(make_unique<Alloc>(*ty, value_name(i), *size,
-                        pref_alignment(i, i.getAllocatedType())));
+                        pref_alignment(i, i.getAllocatedType()),
+                        !has_lifetime_start));
   }
 
   RetTy visitGetElementPtrInst(llvm::GetElementPtrInst &i) {
@@ -568,6 +585,20 @@ public:
       }
       RETURN_IDENTIFIER(make_unique<TernaryOp>(*ty, value_name(i), *a, *b, *c,
                                                op));
+    }
+    case llvm::Intrinsic::lifetime_start:
+    {
+      PARSE_BINOP();
+      // The first argument (size) is not used
+      RETURN_IDENTIFIER(make_unique<SetWritable>(*b, true));
+    }
+    case llvm::Intrinsic::lifetime_end:
+    {
+      PARSE_BINOP();
+      // The first argument (size) is not used
+      // Memset the block as poison
+      BB->addInstr(make_unique<Memset>(*b));
+      RETURN_IDENTIFIER(make_unique<SetWritable>(*b, false));
     }
 
     // do nothing intrinsics
