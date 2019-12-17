@@ -70,6 +70,11 @@ expr Byte::nonptr_value() const {
   return p.extract(bits_byte - 1, 0);
 }
 
+expr Byte::full_poison() const {
+  return (is_ptr() && !ptr_nonpoison()) ||
+         (!is_ptr() && nonptr_nonpoison().isAllOnes());
+}
+
 Byte Byte::mkPoisonByte(const Memory &m) {
   IntType ty("", bits_byte);
   auto v = ty.toBV(ty.getDummyValue(false));
@@ -449,8 +454,8 @@ expr Pointer::block_val_refined(const Pointer &other) const {
     ptr_cnstr = val.ptr_nonpoison().implies(val2.ptr_nonpoison() &&
                                             load_ptr.refined(load_ptr2));
   }
-  return is_ptr == is_ptr2 &&
-         expr::mkIf(is_ptr, ptr_cnstr, int_cnstr);
+  return val.full_poison() || (is_ptr == is_ptr2 &&
+                               expr::mkIf(is_ptr, ptr_cnstr, int_cnstr));
 }
 
 expr Pointer::block_refined(const Pointer &other) const {
