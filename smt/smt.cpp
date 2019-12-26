@@ -54,6 +54,10 @@ void set_memory_limit(uint64_t limit) {
   z3_memory_limit = limit;
 }
 
+uint64_t get_memory_limit() {
+  return z3_memory_limit;
+}
+
 bool hit_memory_limit() {
   return Z3_get_estimated_alloc_size() >= z3_memory_limit;
 }

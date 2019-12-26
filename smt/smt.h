@@ -22,6 +22,7 @@ void set_query_timeout(std::string ms);
 const char* get_query_timeout();
 
 void set_memory_limit(uint64_t limit);
+uint64_t get_memory_limit();
 bool hit_memory_limit();
 bool hit_half_memory_limit();
 
