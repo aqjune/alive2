@@ -719,6 +719,7 @@ public:
       case llvm::Attribute::InReg:
       case llvm::Attribute::SExt:
       case llvm::Attribute::ZExt:
+      case llvm::Attribute::NoCapture:
         // TODO: not important for IR verification, but we should check that
         // they don't change
         continue;
