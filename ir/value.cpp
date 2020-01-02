@@ -155,6 +155,8 @@ static string attr_str(unsigned attributes) {
   string ret;
   if (attributes & Input::NonNull)
     ret += "nonnull ";
+  if (attributes & Input::NoCapture)
+    ret += "nocapture ";
   return ret;
 }
 
@@ -186,6 +188,11 @@ StateValue Input::toSMT(State &s) const {
 
   if (attributes & NonNull)
     s.addPre(Pointer(s.getMemory(), val).isNonZero());
+
+  if (getType().isPtrType()) {
+    auto nocap = Pointer(s.getMemory(), val).is_nocapture();
+    s.addAxiom((attributes & NoCapture) ? nocap : !nocap);
+  }
 
   expr poison = getType().getDummyValue(false).non_poison;
   expr non_poison = getType().getDummyValue(true).non_poison;

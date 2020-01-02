@@ -95,7 +95,8 @@ class Pointer {
 
 public:
   Pointer(const Memory &m, const char *var_name,
-          const smt::expr &local = false, bool unique_name = true);
+          const smt::expr &local = false, bool unique_name = true,
+          bool has_attr = true);
   Pointer(const Memory &m, smt::expr p);
   Pointer(const Memory &m, unsigned bid, bool local);
   Pointer(const Memory &m, const smt::expr &bid, const smt::expr &offset);
@@ -115,7 +116,10 @@ public:
   smt::expr block_size() const;
 
   const smt::expr& operator()() const { return p; }
-  smt::expr short_ptr() const; // Uses short_bid & strips attrs away
+  // Returns expr with short_bid+offset. It strips attrs away.
+  // If this pointer is constructed with var_name and has_attr with false,
+  // the returned expr is the variable.
+  smt::expr short_ptr() const;
   smt::expr release() { return std::move(p); }
   unsigned bits() const { return p.bits(); }
 
@@ -167,6 +171,8 @@ public:
   static Pointer mkNullPointer(const Memory &m);
   smt::expr isNull() const;
   smt::expr isNonZero() const;
+
+  void strip_attrs();
 
   friend std::ostream& operator<<(std::ostream &os, const Pointer &p);
 };
@@ -243,6 +249,9 @@ public:
   smt::expr int2ptr(const smt::expr &val);
 
   std::pair<smt::expr,Pointer> refined(const Memory &other) const;
+
+  // Returns true if a nocapture pointer byte is not in the memory.
+  smt::expr check_nocapture() const;
 
   static Memory mkIf(const smt::expr &cond, const Memory &then,
                      const Memory &els);
