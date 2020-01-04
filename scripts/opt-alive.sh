@@ -28,4 +28,4 @@ else
   # Linux, Cygwin/Msys, or Win32?
   TV_SHAREDLIB=tv.so
 fi
-timeout 1000 $HOME/llvm/build/bin/opt -load=$HOME/alive2/build/tv/$TV_SHAREDLIB -tv-exit-on-error $TV $@ $TV -tv-smt-to=10000 -tv-report-dir=$HOME/alive2/build/logs -tv-smt-stats
+timeout 1000 $HOME/llvm/build/bin/opt -load=$HOME/alive2/build/tv/$TV_SHAREDLIB $TV $@ $TV -tv-smt-to=10000 -tv-report-dir=$HOME/alive2/build/logs -tv-smt-stats -tv-inputmem-simple
