@@ -642,7 +642,7 @@ static void calculateAndInitConstants(Transform &t) {
 
   bool nullptr_is_used = false;
   has_int2ptr      = false;
-  has_ptr2int      = false;
+  has_ptr2int      = util::config::addresses_observed;
   has_malloc       = false;
   has_free         = false;
   has_fncall       = false;
@@ -728,7 +728,10 @@ static void calculateAndInitConstants(Transform &t) {
   auto max_geps
     = ilog2_ceil(add_saturate(max(max_gep_src, max_gep_tgt), max_mem_access),
                  true) + 1;
-  bits_for_offset = min(round_up(max_geps, 4), (uint64_t)bits_program_pointer);
+  bits_for_offset = util::config::disable_byte_widening ? 64 :
+                    min(round_up(max_geps, 4), (uint64_t)bits_program_pointer);
+  if (util::config::disable_bitsofs_opt)
+    bits_for_offset = 64;
 
   // we need an extra bit because 1st bit of size is always 0
   bits_size_t = ilog2_ceil(max_alloc_size, true);
@@ -753,8 +756,16 @@ static void calculateAndInitConstants(Transform &t) {
     min_access_size = 1;
   bits_byte = 8 * ((does_mem_access || num_globals != 0)
                      ? (unsigned)min_access_size : 1);
+  if (util::config::disable_byte_widening)
+    bits_byte = 8;
 
   little_endian = t.src.isLittleEndian();
+
+  if (util::config::disable_byte_specialization) {
+    does_ptr_mem_access = true;
+    does_ptr_store = true;
+    does_int_mem_access = true;
+  }
 
   if (config::debug)
     config::dbg() << "num_max_nonlocals_inst: " << num_max_nonlocals_inst << "\n"
