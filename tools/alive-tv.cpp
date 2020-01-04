@@ -80,6 +80,17 @@ static llvm::cl::opt<bool> opt_bidirectional("bidirectional",
     llvm::cl::init(false), llvm::cl::cat(opt_alive),
     llvm::cl::desc("Alive: Run refinement check in both directions"));
 
+static llvm::cl::opt<bool> opt_andor_freeze(
+    "sema-andor-freeze",
+    llvm::cl::desc("Alive: change semantics of and/or i1 to freeze operands"),
+    llvm::cl::cat(opt_alive), llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_simpleinputmem(
+    "inputmem-simple",
+    llvm::cl::desc("Alive: make the input memory have non-poison integer bytes"),
+    llvm::cl::init(false));
+
+
 static llvm::ExitOnError ExitOnErr;
 
 // adapted from llvm-dis.cpp
@@ -294,6 +305,8 @@ int main(int argc, char **argv) {
   config::disable_undef_input = opt_disable_undef;
   config::disable_poison_input = opt_disable_poison;
   config::debug = opt_debug;
+  config::andor_freeze = opt_andor_freeze;
+  config::inputmem_simple = opt_simpleinputmem;
 
   auto M1 = openInputFile(Context, opt_file1);
   if (!M1.get())

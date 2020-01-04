@@ -15,6 +15,8 @@ bool skip_smt = false;
 bool disable_poison_input = false;
 bool disable_undef_input = false;
 bool debug = false;
+bool andor_freeze = false;
+bool inputmem_simple = false;
 
 ostream &dbg() {
   return *debug_os;
