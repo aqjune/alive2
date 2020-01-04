@@ -9,6 +9,7 @@
 #include "smt/exprs.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/config.h"
 #include <functional>
 #include <sstream>
 
@@ -360,12 +361,40 @@ StateValue BinOp::toSMT(State &s) const {
 
   case And:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+      auto aaty = dynamic_cast<const AggregateType *>(&getType());
+      auto &aty = aaty ? aaty->getChild(0) : getType();
+      if (util::config::andor_freeze && aty.bits() == 1) {
+        if (ap.isTrue() && bp.isTrue())
+          return { a & b, true };
+
+        StateValue ret_type = aty.getDummyValue(true);
+        expr nondet_a = expr::mkFreshVar("nondet_a", a),
+             nondet_b = expr::mkFreshVar("nondet_b", a);
+        s.addQuantVar(nondet_a);
+        s.addQuantVar(nondet_b);
+        return { expr::mkIf(ap, a, move(nondet_a)) &
+                 expr::mkIf(bp, b, move(nondet_b)), true };
+      }
       return { a & b, true };
     };
     break;
 
   case Or:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+      auto aaty = dynamic_cast<const AggregateType *>(&getType());
+      auto &aty = aaty ? aaty->getChild(0) : getType();
+      if (util::config::andor_freeze && aty.bits() == 1) {
+        if (ap.isTrue() && bp.isTrue())
+          return { a | b, true };
+
+        StateValue ret_type = aty.getDummyValue(true);
+        expr nondet_a = expr::mkFreshVar("nondet_a", a),
+             nondet_b = expr::mkFreshVar("nondet_b", a);
+        s.addQuantVar(nondet_a);
+        s.addQuantVar(nondet_b);
+        return { expr::mkIf(ap, a, move(nondet_a)) |
+                 expr::mkIf(bp, b, move(nondet_b)), true };
+      }
       return { a | b, true };
     };
     break;
@@ -479,10 +508,23 @@ StateValue BinOp::toSMT(State &s) const {
       return make_pair(move(sv1), StateValue(move(v2), move(non_poison)));
     };
   } else {
-    scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      auto [v, np] = fn(a, ap, b, bp);
-      return { move(v), ap && bp && np };
-    };
+    switch (op) {
+    case And:
+    case Or:
+      if (util::config::andor_freeze && getType().isIntType() &&
+          getType().bits() == 1) {
+        scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+          auto [v, np] = fn(a, ap, b, bp);
+          return { move(v), move(np) };
+        };
+        break;
+      }
+    default:
+      scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+        auto [v, np] = fn(a, ap, b, bp);
+        return { move(v), ap && bp && np };
+      };
+    }
   }
 
   auto &a = s[*lhs];
@@ -1244,19 +1286,40 @@ StateValue ICmp::toSMT(State &s) const {
     fn = [&](auto &av, auto &bv, Cond cond) {
       Pointer lhs(s.getMemory(), av);
       Pointer rhs(s.getMemory(), bv);
-      switch (cond) {
-      case EQ:  return StateValue(lhs == rhs, true);
-      case NE:  return StateValue(lhs != rhs, true);
-      case SLE: return lhs.sle(rhs);
-      case SLT: return lhs.slt(rhs);
-      case SGE: return lhs.sge(rhs);
-      case SGT: return lhs.sgt(rhs);
-      case ULE: return lhs.ule(rhs);
-      case ULT: return lhs.ult(rhs);
-      case UGE: return lhs.uge(rhs);
-      case UGT: return lhs.ugt(rhs);
-      case Any:
-        UNREACHABLE();
+      if (util::config::ptrcmp_phy) {
+        auto plhs = lhs.get_address();
+        auto prhs = rhs.get_address();
+        expr res;
+        switch (cond) {
+        case EQ:  res = plhs == prhs; break;
+        case NE:  res = plhs != prhs; break;
+        case SLE: res = plhs.sle(prhs); break;
+        case SLT: res = plhs.slt(prhs); break;
+        case SGE: res = plhs.sge(prhs); break;
+        case SGT: res = plhs.sgt(prhs); break;
+        case ULE: res = plhs.ule(prhs); break;
+        case ULT: res = plhs.ult(prhs); break;
+        case UGE: res = plhs.uge(prhs); break;
+        case UGT: res = plhs.ugt(prhs); break;
+        case Any:
+          UNREACHABLE();
+        }
+        return StateValue(move(res), true);
+      } else {
+        switch (cond) {
+        case EQ:  return StateValue(lhs == rhs, true);
+        case NE:  return StateValue(lhs != rhs, true);
+        case SLE: return lhs.sle(rhs);
+        case SLT: return lhs.slt(rhs);
+        case SGE: return lhs.sge(rhs);
+        case SGT: return lhs.sgt(rhs);
+        case ULE: return lhs.ule(rhs);
+        case ULT: return lhs.ult(rhs);
+        case UGE: return lhs.uge(rhs);
+        case UGT: return lhs.ugt(rhs);
+        case Any:
+          UNREACHABLE();
+        }
       }
       UNREACHABLE();
     };
