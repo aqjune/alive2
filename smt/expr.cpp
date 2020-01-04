@@ -4,6 +4,7 @@
 #include "smt/expr.h"
 #include "smt/ctx.h"
 #include "util/compiler.h"
+#include "util/config.h"
 #include <algorithm>
 #include <cassert>
 #include <limits>
@@ -1429,7 +1430,8 @@ expr expr::load(const expr &idx) const {
     return val;
 
   } else if (Z3_get_ast_kind(ctx(), ast()) == Z3_QUANTIFIER_AST &&
-             Z3_is_lambda(ctx(), ast())) {
+             Z3_is_lambda(ctx(), ast()) &&
+             !util::config::disable_memsetcpy_unroll) {
     assert(Z3_get_quantifier_num_bound(ctx(), ast()) == 1);
     expr body = Z3_get_quantifier_body(ctx(), ast());
     if (body.isConst())
