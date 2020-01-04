@@ -87,6 +87,17 @@ llvm::cl::opt<bool> opt_debug(
   llvm::cl::desc("Alive: Show debug data"),
   llvm::cl::init(false), llvm::cl::Hidden);
 
+llvm::cl::opt<bool> opt_andor_freeze(
+  "tv-sema-andor-freeze",
+  llvm::cl::desc("Alive: change semantics of and/or i1 to freeze operands"),
+  llvm::cl::init(false));
+
+llvm::cl::opt<bool> opt_simpleinputmem(
+  "tv-inputmem-simple",
+  llvm::cl::desc("Alive: make the input memory have non-poison integer bytes"),
+  llvm::cl::init(false));
+
+
 ostream *out;
 ofstream out_file;
 string report_filename;
@@ -216,6 +227,8 @@ struct TVPass final : public llvm::FunctionPass {
     config::disable_undef_input = opt_disable_undef_input;
     config::disable_poison_input = opt_disable_poison_input;
     config::debug = opt_debug;
+    config::andor_freeze = opt_andor_freeze;
+    config::inputmem_simple = opt_simpleinputmem;
 
     llvm_util_init.emplace(*out, module.getDataLayout());
     smt_init.emplace();
