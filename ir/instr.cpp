@@ -2119,6 +2119,36 @@ unique_ptr<Instr> Memcpy::dup(const string &suffix) const {
 }
 
 
+vector<Value*> Strlen::operands() const {
+  return { ptr };
+}
+
+void Strlen::rauw(const Value &what, Value &with) {
+  RAUW(ptr);
+}
+
+void Strlen::print(ostream &os) const {
+  os << getName() << " = strlen" << *ptr;
+}
+
+StateValue Strlen::toSMT(State &s) const {
+  auto &[vptr, np_ptr] = s[*ptr];
+  s.addUB(np_ptr);
+  return s.getMemory().strlen(vptr, getType());
+}
+
+expr Strlen::getTypeConstraints(const Function &f) const {
+  return Value::getTypeConstraints() &&
+         ptr->getType().enforcePtrType() &&
+         getType().enforceIntType();
+}
+
+unique_ptr<Instr> Strlen::dup(const string &suffix) const {
+  return make_unique<Strlen>(getType(), getName() + suffix, *ptr);
+}
+
+
+
 vector<Value*> ExtractElement::operands() const {
   return { v, idx };
 }

@@ -118,10 +118,10 @@ expr Byte::is_poison(bool fullbit) const {
                                       : np != 0);
 }
 
-expr Byte::is_zero() const {
-  return expr::mkIf(is_ptr(),
-                    ptr_nonpoison() && ptr().isNull(),
-                    nonptr_nonpoison() == 0 && nonptr_value() == 0);
+expr Byte::is_zero(bool allow_nullptr) const {
+  auto zero = nonptr_nonpoison() == 0 && nonptr_value() == 0;
+  return allow_nullptr ?
+    expr::mkIf(is_ptr(), ptr_nonpoison() && ptr().isNull(), zero) : zero;
 }
 
 unsigned Byte::bitsByte() {
@@ -444,10 +444,11 @@ DEFINE_CMP(ult)
 DEFINE_CMP(uge)
 DEFINE_CMP(ugt)
 
-expr Pointer::inbounds() const {
+expr Pointer::inbounds(bool strict) const {
   // equivalent to offset >= 0 && offset <= block_size
   // because block_size u<= 0x7FFF..
-  return get_offset().ule(block_size());
+  return
+    strict ? get_offset().ult(block_size()) : get_offset().ule(block_size());
 }
 
 expr Pointer::block_alignment() const {
@@ -1271,6 +1272,30 @@ void Memory::memcpy(const expr &d, const expr &s, const expr &bytesize,
                  ::load(src_idx, local_block_val, non_local_block_val),
                  local_block_val, non_local_block_val);
   }
+}
+
+StateValue Memory::strlen(const smt::expr &ptr, const Type &type) {
+  Pointer p(*this, ptr);
+  // i, j are non-negative
+  auto i = expr::mkFreshVar("i", expr::mkUInt(0, bits_for_offset - 1));
+  auto j = expr::mkFreshVar("j", i);
+  auto bi = load(p + i), bj = load(p + j);
+  auto no_zero_all
+    = expr::mkForAll({ j },
+      ((p + j).inbounds(true)).implies(!bi.is_zero(false)));
+  auto no_zero_before
+    = bi.is_zero() && expr::mkForAll({ j },
+        (j.ult(i)).implies(!bj.is_poison(false) && !bj.is_ptr() &&
+                           !bj.is_zero(false)));
+
+  state->addQuantVar(i);
+  state->addPre(move(no_zero_before));
+  p.is_dereferenceable(i, 1, false);
+  state->addUB(!no_zero_all);
+  state->addUB(p.inbounds(true));
+
+  // strlen never returns poison.
+  return { i.zextOrTrunc(type.bits()), true };
 }
 
 expr Memory::ptr2int(const expr &ptr) {

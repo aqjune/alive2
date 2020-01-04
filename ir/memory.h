@@ -56,7 +56,7 @@ public:
   smt::expr nonptr_nonpoison() const;
   smt::expr nonptr_value() const;
   smt::expr is_poison(bool fullbit = true) const;
-  smt::expr is_zero() const; // zero or null
+  smt::expr is_zero(bool allow_nullptr = true) const; // zero or null
 
   const smt::expr& operator()() const { return p; }
 
@@ -141,7 +141,7 @@ public:
   StateValue uge(const Pointer &rhs) const;
   StateValue ugt(const Pointer &rhs) const;
 
-  smt::expr inbounds() const;
+  smt::expr inbounds(bool strict = false) const;
   smt::expr block_alignment() const; // log(bits)
   smt::expr is_block_aligned(unsigned align, bool exact = false) const;
   smt::expr is_aligned(unsigned align) const;
@@ -246,6 +246,7 @@ public:
   void memcpy(const smt::expr &dst, const smt::expr &src,
               const smt::expr &bytesize, unsigned align_dst, unsigned align_src,
               bool move);
+  StateValue strlen(const smt::expr &ptr, const Type &type);
 
   smt::expr ptr2int(const smt::expr &ptr);
   smt::expr int2ptr(const smt::expr &val);
