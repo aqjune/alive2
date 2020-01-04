@@ -15,6 +15,10 @@ extern bool disable_poison_input;
 
 extern bool disable_undef_input;
 
+extern bool andor_freeze;
+
+extern bool inputmem_simple;
+
 extern bool debug;
 
 std::ostream &dbg();

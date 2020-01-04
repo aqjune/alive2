@@ -6,6 +6,7 @@
 #include "ir/state.h"
 #include "ir/value.h"
 #include "util/compiler.h"
+#include "util/config.h"
 #include <string>
 
 using namespace IR;
@@ -858,10 +859,17 @@ static expr mk_liveness_array() {
 }
 
 static void mk_nonlocal_val_axioms(State &s, Memory &m, expr &val) {
-  if (!does_ptr_mem_access)
-    return;
-
   auto idx = Pointer(m, "#idx", false, false, expr()).short_ptr();
+
+  if (!does_ptr_mem_access) {
+    if (util::config::inputmem_simple) {
+      Byte byte(m, val.load(idx));
+      s.addAxiom(
+        expr::mkForAll({ idx }, !byte.is_ptr() && !byte.is_poison(false)));
+    }
+    return;
+  }
+
 #if 0
   if (num_nonlocals > 0) {
     expr is_ptr = does_int_mem_access
@@ -891,11 +899,16 @@ static void mk_nonlocal_val_axioms(State &s, Memory &m, expr &val) {
   Byte byte(m, val.load(idx));
   Pointer loadedptr = byte.ptr();
   expr bid = loadedptr.get_short_bid();
-  s.addAxiom(
-    expr::mkForAll({ idx },
-      byte.is_ptr().implies(!loadedptr.is_local() &&
-                            !loadedptr.is_nocapture() &&
-                            bid.ule(num_nonlocals - 1))));
+  if (util::config::inputmem_simple) {
+    s.addAxiom(
+      expr::mkForAll({ idx }, !byte.is_ptr() && !byte.is_poison(false)));
+  } else {
+    s.addAxiom(
+      expr::mkForAll({ idx },
+        byte.is_ptr().implies(!loadedptr.is_local() &&
+                              !loadedptr.is_nocapture() &&
+                              bid.ule(num_nonlocals - 1))));
+  }
 #endif
 }
 
