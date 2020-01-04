@@ -84,6 +84,47 @@ static llvm::cl::opt<bool> opt_bidirectional("bidirectional",
     llvm::cl::init(false), llvm::cl::cat(opt_alive),
     llvm::cl::desc("Run refinement check in both directions"));
 
+static llvm::cl::opt<bool> opt_andor_freeze(
+    "sema-andor-freeze",
+    llvm::cl::desc("Alive: change semantics of and/or i1 to freeze operands"),
+    llvm::cl::cat(opt_alive), llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_ptrcmp_phy(
+    "sema-ptrcmp-phy",
+    llvm::cl::desc("Alive: compare physical addresses of pointers"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_simpleinputmem(
+    "inputmem-simple",
+    llvm::cl::desc("Alive: make the input memory have non-poison integer bytes"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_disable_byte_widening(
+    "disable-byte-widening",
+    llvm::cl::desc("Alive: disable byte widening"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_disable_bitsofs_opt(
+    "disable-bitsofs-opt",
+    llvm::cl::desc("Alive: disable bits_for_offset optimize"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_disable_byte_specialization(
+    "disable-byte-specialization",
+    llvm::cl::desc("Alive: disable byte specialization"));
+
+static llvm::cl::opt<bool> opt_disable_memsetcpy_unroll(
+    "disable-memsetcpy-unroll",
+    llvm::cl::desc("Alive: disable unrolling memset/memcpy"));
+
+static llvm::cl::opt<bool> opt_addresses_observed(
+    "addresses-observed",
+    llvm::cl::desc("Alive: assume that addresses are all observed"));
+
+static llvm::cl::opt<bool> opt_disable_all(
+    "disable-allopt",
+    llvm::cl::desc("Alive: disable optimizations"));
+
 static llvm::ExitOnError ExitOnErr;
 
 // adapted from llvm-dis.cpp
@@ -352,6 +393,15 @@ int main(int argc, char **argv) {
   config::disable_undef_input = opt_disable_undef;
   config::disable_poison_input = opt_disable_poison;
   config::debug = opt_debug;
+  config::andor_freeze = opt_andor_freeze;
+  config::inputmem_simple = opt_simpleinputmem;
+  config::ptrcmp_phy = opt_ptrcmp_phy;
+
+  config::disable_byte_widening = opt_disable_byte_widening || opt_disable_all;
+  config::disable_bitsofs_opt = opt_disable_bitsofs_opt || opt_disable_all;
+  config::disable_byte_specialization = opt_disable_byte_specialization || opt_disable_all;
+  config::disable_memsetcpy_unroll = opt_disable_memsetcpy_unroll || opt_disable_all;
+  config::addresses_observed = opt_addresses_observed || opt_disable_all;
 
   auto M1 = openInputFile(Context, opt_file1);
   if (!M1.get())
