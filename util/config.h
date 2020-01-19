@@ -7,6 +7,8 @@
 
 namespace util::config {
 
+extern unsigned encoding_to;
+
 extern bool symexec_print_each_value;
 
 extern bool skip_smt;

@@ -10,6 +10,7 @@ static ostream *debug_os = &cerr;
 
 namespace util::config {
 
+unsigned encoding_to = 60000; // 1 minute
 bool symexec_print_each_value = false;
 bool skip_smt = false;
 bool disable_poison_input = false;
