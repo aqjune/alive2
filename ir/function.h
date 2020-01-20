@@ -114,6 +114,7 @@ public:
   bool hasReturn() const;
   unsigned bitsPointers() const { return bits_pointers; }
   bool isLittleEndian() const { return little_endian; }
+  bool hasNoMemInst() const;
 
   void syncDataWithSrc(const Function &src);
 
