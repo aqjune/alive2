@@ -166,7 +166,9 @@ struct TVPass final : public llvm::FunctionPass {
       assert(types.hasSingleTyping());
     }
 
-    if (Errors errs = verifier.verify()) {
+    if (t.src.hasNoMemInst() && t.tgt.hasNoMemInst()) {
+      *out << "Has no memory instruction, ignored." << endl;
+    } else if (Errors errs = verifier.verify()) {
       *out << "Transformation doesn't verify!\n" << errs << endl;
       has_failure |= errs.isUnsound();
       if (opt_error_fatal && has_failure)

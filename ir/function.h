@@ -110,6 +110,7 @@ public:
 
   bool hasReturn() const;
   bool isLittleEndian() const { return little_endian; }
+  bool hasNoMemInst() const;
 
   void syncDataWithSrc(const Function &src);
 
