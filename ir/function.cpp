@@ -152,6 +152,24 @@ bool Function::hasReturn() const {
   return false;
 }
 
+bool Function::hasNoMemInst() const {
+  for (auto &I: getInputs()) {
+    if (hasPtr(I.getType()))
+      return false;
+  }
+  for (auto &BB: BB_order) {
+    for (auto &inst: BB->instrs()) {
+      if (hasPtr(inst.getType()))
+        return false;
+      for (auto &v : inst.operands()) {
+        if (hasPtr(v->getType()))
+          return false;
+      }
+    }
+  }
+  return true;
+}
+
 void Function::syncDataWithSrc(const Function &src) {
   auto IS = src.inputs.begin(), ES = src.inputs.end();
   auto IT = inputs.begin(), ET = inputs.end();
