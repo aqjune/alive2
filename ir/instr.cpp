@@ -1122,9 +1122,14 @@ void FnCall::print(ostream &os) const {
   os << "call " << print_type(getType()) << fnName << '(';
 
   bool first = true;
-  for (auto arg : args) {
+  for (unsigned i = 0, sz = args.size(); i != sz; ++i) {
+    auto arg = args[i];
+    auto flag = argflags[i];
     if (!first)
       os << ", ";
+
+    if (flag & ArgByVal)
+      os << "byval ";
     os << *arg;
     first = false;
   }
@@ -1224,6 +1229,7 @@ unique_ptr<Instr> FnCall::dup(const string &suffix) const {
   auto r = make_unique<FnCall>(getType(), getName() + suffix, string(fnName),
                                flags, valid);
   r->args = args;
+  r->argflags = argflags;
   return r;
 }
 
