@@ -55,9 +55,16 @@ define void @f8() {
   ret void
 }
 
+define i1 @f9() {
+  %p = call i8* @kn()
+  %cmp = icmp eq i8* %p, null
+  ret i1 %cmp
+}
+
 declare i8 @g(i8*)
 declare i8 @g2(i8* byval)
 declare i8 @h(i8*) readnone
 declare i8* @k()
+declare nonnull i8* @kn()
 
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)

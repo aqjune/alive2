@@ -204,7 +204,10 @@ void Function::print(ostream &os, bool print_header) const {
   }
 
   if (print_header) {
-    os << "define " << getType() << " @" << name << '(';
+    string retflags = "";
+    if (retFlags & NonNull)
+      retflags = "nonnull";
+    os << "define " << retflags << " " << getType() << " @" << name << '(';
     bool first = true;
     for (auto &input : getInputs()) {
       if (!first)

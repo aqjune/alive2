@@ -173,8 +173,8 @@ public:
 class FnCall final : public Instr {
 public:
   enum Flags { None = 0, NoRead = 1 << 0, NoWrite = 1 << 1, ArgMemOnly = 1 << 2,
-               NNaN = 1 << 3 };
-  enum ArgFlags { ArgNone = 0, ArgByVal = 1 << 0 };
+               NNaN = 1 << 3, NonNull = 1 << 4 };
+  enum ArgFlags { ArgNone = 0, ArgByVal = 1 << 0, ArgNonNull = 1 << 1 };
 private:
   std::string fnName;
   std::vector<Value*> args;
