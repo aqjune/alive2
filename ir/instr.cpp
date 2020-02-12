@@ -1142,6 +1142,8 @@ void FnCall::print(ostream &os) const {
 
     if (flag & ArgByVal)
       os << "byval ";
+    if (flag & ArgNonNull)
+      os << "nonnull ";
     os << *arg;
     first = false;
   }
@@ -1153,6 +1155,8 @@ void FnCall::print(ostream &os) const {
     os << " nowrite";
   if (flags & ArgMemOnly)
     os << " argmemonly";
+  if (flags & NonNull)
+    os << " nonnull";
   if (flags & NNaN)
     os << " NNaN";
 
@@ -1171,7 +1175,10 @@ static void unpack_inputs(State&s, Type &ty, unsigned argflag,
   } else if (ty.isPtrType()) {
     Pointer p(s.getMemory(), value.value);
     p.strip_attrs();
-    ptr_inputs.emplace_back(StateValue(p.release(), expr(value.non_poison)),
+
+    auto nonnullchk = p.isNonZero() || !(argflag & FnCall::ArgNonNull);
+    StateValue pval(p.release(), expr(value.non_poison) && move(nonnullchk));
+    ptr_inputs.emplace_back(pval,
                             argflag & FnCall::ArgByVal);
   } else {
     inputs.emplace_back(value);
@@ -1188,12 +1195,12 @@ static void unpack_ret_ty (vector<Type*> &out_types, Type &ty) {
   }
 }
 
-static StateValue pack_return(Type &ty, vector<StateValue> &vals,
+static StateValue pack_return(State &s, Type &ty, vector<StateValue> &vals,
                               unsigned flags, unsigned &idx) {
   if (auto agg = ty.getAsAggregateType()) {
     vector<StateValue> vs;
     for (unsigned i = 0, e = agg->numElementsConst(); i != e; ++i) {
-      vs.emplace_back(pack_return(agg->getChild(i), vals, flags, idx));
+      vs.emplace_back(pack_return(s, agg->getChild(i), vals, flags, idx));
     }
     return agg->aggregateVals(vs);
   }
@@ -1201,6 +1208,10 @@ static StateValue pack_return(Type &ty, vector<StateValue> &vals,
   auto ret = vals[idx++];
   if (ty.isFloatType() && (flags & FnCall::NNaN))
     ret.non_poison &= !ret.value.isNaN();
+  if (flags & FnCall::NonNull) {
+    assert(ty.isPtrType());
+    ret.non_poison &= Pointer(s.getMemory(), ret.value).isNonZero();
+  }
   return ret;
 }
 
@@ -1230,7 +1241,7 @@ StateValue FnCall::toSMT(State &s) const {
   auto ret = s.addFnCall(fnName_mangled.str(), move(inputs), move(ptr_inputs),
                          out_types, !(flags & NoRead), !(flags & NoWrite),
                          flags & ArgMemOnly);
-  return isVoid() ? StateValue() : pack_return(getType(), ret, flags, idx);
+  return isVoid() ? StateValue() : pack_return(s, getType(), ret, flags, idx);
 }
 
 expr FnCall::getTypeConstraints(const Function &f) const {
@@ -1730,7 +1741,13 @@ StateValue Return::toSMT(State &s) const {
   auto &retval = s[*val];
   s.addUB(s.getMemory().check_nocapture());
   addUBForNoCaptureRet(s, retval, val->getType());
-  s.addReturn(retval);
+  if (s.getFn().getRetFlags() & Function::NonNull) {
+    s.addReturn(
+      StateValue::mkIf(Pointer(s.getMemory(), retval.value).isNonZero(),
+                       retval,
+                       val->getType().getDummyValue(false)));
+  } else
+    s.addReturn(retval);
   return {};
 }
 

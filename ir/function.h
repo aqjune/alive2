@@ -65,6 +65,8 @@ class Function final {
   std::vector<std::unique_ptr<AggregateValue>> aggregates;
   std::vector<std::unique_ptr<Value>> inputs;
 
+  unsigned retFlags;
+
 public:
   Function() {}
   Function(Type &type, std::string &&name, bool little_endian = true)
@@ -90,6 +92,10 @@ public:
   }
   unsigned numConstants() const { return constants.size(); }
   Value &getConstant(int idx) const { return *constants[idx]; }
+
+  enum RetFlags { None = 0, NonNull = 1 << 0 };
+  unsigned getRetFlags() const { return retFlags; }
+  void setRetFlags(unsigned flags) { retFlags = flags; }
 
   std::vector<GlobalVariable *> getGlobalVars() const;
   std::vector<std::string_view> getGlobalVarNames() const;

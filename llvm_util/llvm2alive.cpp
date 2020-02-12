@@ -252,6 +252,9 @@ public:
       flags |= FnCall::NoRead;
     if (i.hasFnAttr(llvm::Attribute::ArgMemOnly))
       flags |= FnCall::ArgMemOnly;
+    if (fn->hasAttribute(llvm::AttributeList::ReturnIndex,
+                        llvm::Attribute::NonNull))
+      flags |= FnCall::NonNull;
     if (auto op = dyn_cast<llvm::FPMathOperator>(&i)) {
       if (op->hasNoNaNs())
         flags |= FnCall::NNaN;
@@ -271,6 +274,8 @@ public:
         // Check whether arg itr finished early because it was var arg
         //if (argI->hasByValAttr())
         //  attr |= FnCall::ArgByVal;
+        if (argI->hasNonNullAttr())
+          attr |= FnCall::ArgNonNull;
         argI++;
       }
       call->addArg(*a, attr);
@@ -803,6 +808,12 @@ public:
       add_identifier(arg, *val.get());
       Fn.addInput(move(val));
     }
+
+    unsigned retFlags = Function::None;
+    if (f.hasAttribute(llvm::AttributeList::ReturnIndex,
+                       llvm::Attribute::NonNull))
+      retFlags |= Function::NonNull;
+    Fn.setRetFlags(retFlags);
 
     // create all BBs upfront in topological order
     vector<pair<BasicBlock*, llvm::BasicBlock*>> sorted_bbs;
