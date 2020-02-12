@@ -269,8 +269,8 @@ public:
       unsigned attr = FnCall::ArgNone;
       if (argI != argE) {
         // Check whether arg itr finished early because it was var arg
-        if (argI->hasByValAttr())
-          attr |= FnCall::ArgByVal;
+        //if (argI->hasByValAttr())
+        //  attr |= FnCall::ArgByVal;
         argI++;
       }
       call->addArg(*a, attr);
