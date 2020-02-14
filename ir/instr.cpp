@@ -1177,7 +1177,8 @@ static void unpack_inputs(State&s, Type &ty, unsigned argflag,
     p.strip_attrs();
 
     auto nonnullchk = p.isNonZero() || !(argflag & FnCall::ArgNonNull);
-    StateValue pval(p.release(), expr(value.non_poison) && move(nonnullchk));
+    s.addUB(value.non_poison.implies(nonnullchk));
+    StateValue pval(p.release(), expr(value.non_poison));
     ptr_inputs.emplace_back(pval,
                             argflag & FnCall::ArgByVal);
   } else {
@@ -1742,12 +1743,10 @@ StateValue Return::toSMT(State &s) const {
   s.addUB(s.getMemory().check_nocapture());
   addUBForNoCaptureRet(s, retval, val->getType());
   if (s.getFn().getRetFlags() & Function::NonNull) {
-    s.addReturn(
-      StateValue::mkIf(Pointer(s.getMemory(), retval.value).isNonZero(),
-                       retval,
-                       val->getType().getDummyValue(false)));
-  } else
-    s.addReturn(retval);
+    s.addUB(retval.non_poison.implies(
+      Pointer(s.getMemory(), retval.value).isNonZero()));
+  }
+  s.addReturn(retval);
   return {};
 }
 
