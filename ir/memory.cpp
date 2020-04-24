@@ -345,7 +345,8 @@ static StateValue bytesToValue(const Memory &m, const vector<Byte> &bytes,
 }
 
 static bool observes_addresses() {
-  return IR::has_ptr2int || IR::has_int2ptr;
+  return
+    IR::has_ptr2int || IR::has_int2ptr || (IR::has_null_block && IR::has_ptrcmp);
 }
 
 static bool ptr_has_local_bit() {
@@ -532,13 +533,35 @@ expr Pointer::operator!=(const Pointer &rhs) const {
   return !operator==(rhs);
 }
 
+StateValue Pointer::eq(const Pointer &rhs) const {
+  if (observes_addresses()) {
+    return
+      { expr::mkIf(rhs.isNullBlock() || isNullBlock(),
+                   getAddress() == rhs.getAddress(), *this == rhs), true };
+  }
+  assert(!has_null_block);
+  return { *this == rhs, true };
+}
+
+StateValue Pointer::ne(const Pointer &rhs) const {
+  auto [v, np] = eq(rhs);
+  return { !move(v), move(np) };
+}
+
 #define DEFINE_CMP(op)                                                      \
 StateValue Pointer::op(const Pointer &rhs) const {                          \
   /* Note that attrs are not compared. */                                   \
   expr nondet = expr::mkFreshVar("nondet", true);                           \
   m.state->addQuantVar(nondet);                                             \
-  return { expr::mkIf(getBid() == rhs.getBid(),                             \
-                      getOffset().op(rhs.getOffset()), nondet), true };     \
+  expr cmp = expr::mkIf(getBid() == rhs.getBid(),                           \
+                      getOffset().op(rhs.getOffset()), nondet);             \
+  if (observes_addresses()) {                                               \
+    return                                                                  \
+      { expr::mkIf(rhs.isNullBlock() || isNullBlock(),                      \
+                   getAddress().op(rhs.getAddress()), move(cmp)), true };   \
+  }                                                                         \
+  assert(!has_null_block);                                                  \
+  return { move(cmp), true };                                               \
 }
 
 DEFINE_CMP(sle)
@@ -910,6 +933,12 @@ expr Pointer::isNull() const {
   if (!has_null_block)
     return false;
   return *this == mkNullPointer(m);
+}
+
+expr Pointer::isNullBlock() const {
+  if (!has_null_block)
+    return false;
+  return getBid() == mkNullPointer(m).getBid();
 }
 
 expr Pointer::isNonZero() const {

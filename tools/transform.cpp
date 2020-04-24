@@ -505,6 +505,11 @@ static uint64_t max_gep(const Instr &inst) {
     }
     return abs(off);
   }
+  if (auto icmp = dynamic_cast<const ICmp*>(&inst)) {
+    if (hasPtr(icmp->getOperandType()))
+      return UINT64_MAX;
+    return 0;
+  }
   if (auto load = dynamic_cast<const Load*>(&inst)) {
     max_mem_access = max(max_mem_access,
                          (uint64_t)Memory::getStoreByteSize(load->getType()));
@@ -732,6 +737,7 @@ static void calculateAndInitConstants(Transform &t) {
   bool nullptr_is_used = false;
   has_int2ptr      = false;
   has_ptr2int      = false;
+  has_ptrcmp       = false;
   has_malloc       = false;
   has_free         = false;
   has_fncall       = false;
@@ -761,6 +767,9 @@ static void calculateAndInitConstants(Transform &t) {
 
         if (auto alloc = dynamic_cast<const Alloc*>(&I))
           has_dead_allocas |= alloc->initDead();
+
+        if (auto pcmp = dynamic_cast<const ICmp*>(&I))
+          has_ptrcmp |= hasPtr(pcmp->getOperandType());
 
         if (auto alloc = dynamic_cast<const Malloc*>(&I)) {
           has_malloc |= true;
@@ -877,6 +886,7 @@ static void calculateAndInitConstants(Transform &t) {
                   << "\nnullptr_is_used: " << nullptr_is_used
                   << "\nhas_int2ptr: " << has_int2ptr
                   << "\nhas_ptr2int: " << has_ptr2int
+                  << "\nhas_ptrcmp: " << has_ptrcmp
                   << "\nhas_malloc: " << has_malloc
                   << "\nhas_free: " << has_free
                   << "\nhas_null_block: " << has_null_block
