@@ -379,13 +379,16 @@ StateValue BinOp::toSMT(State &s) const {
 
   case And:
     fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return { a & b, true };
+      expr blocks_poison = (ap && a == 0u) || (bp && b == 0u);
+      return { a & b, blocks_poison || (ap && bp) };
     };
     break;
 
   case Or:
     fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return { a | b, true };
+      expr allones = expr::mkInt(-1, b.bits());
+      expr blocks_poison = (ap && a == allones) || (bp && b == allones);
+      return { a | b, blocks_poison || (ap && bp) };
     };
     break;
 
@@ -518,10 +521,22 @@ StateValue BinOp::toSMT(State &s) const {
       return make_pair(move(sv1), StateValue(move(v2), move(non_poison)));
     };
   } else {
-    scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      auto [v, np] = fn(a, ap, b, bp);
-      return { move(v), ap && bp && np };
-    };
+    switch (op) {
+    case And:
+    case Or:
+      if (getType().isIntType()) {
+        scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+          auto [v, np] = fn(a, ap, b, bp);
+          return { move(v), move(np) };
+        };
+        break;
+      }
+    default:
+      scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+        auto [v, np] = fn(a, ap, b, bp);
+        return { move(v), ap && bp && np };
+      };
+    }
   }
 
   auto &a = s[*lhs];
