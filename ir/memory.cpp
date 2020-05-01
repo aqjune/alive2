@@ -533,14 +533,29 @@ expr Pointer::operator!=(const Pointer &rhs) const {
   return !operator==(rhs);
 }
 
+static expr inbounds(const Pointer &p, bool strict) {
+  if (isUndef(p.getOffset()))
+    return false;
+
+  // equivalent to offset >= 0 && offset <= block_size
+  // because block_size u<= 0x7FFF..FF
+  return strict ? p.getOffsetSizet().ult(p.blockSize()) :
+                  p.getOffsetSizet().ule(p.blockSize());
+}
+
 StateValue Pointer::eq(const Pointer &rhs) const {
+  expr nondet = expr::mkFreshVar("nondet", true);
+  m.state->addQuantVar(nondet);
+  expr nondet_cond = getBid() != rhs.getBid() &&
+                     (!::inbounds(*this, true) || !::inbounds(rhs, true));
+  expr res = expr::mkIf(nondet_cond, nondet, *this == rhs);
   if (observes_addresses()) {
     return
       { expr::mkIf(rhs.isNullBlock() || isNullBlock(),
-                   getAddress() == rhs.getAddress(), *this == rhs), true };
+                   getAddress() == rhs.getAddress(), move(res)), true };
   }
   assert(!has_null_block);
-  return { *this == rhs, true };
+  return { move(res), true };
 }
 
 StateValue Pointer::ne(const Pointer &rhs) const {
@@ -553,8 +568,10 @@ StateValue Pointer::op(const Pointer &rhs) const {                          \
   /* Note that attrs are not compared. */                                   \
   expr nondet = expr::mkFreshVar("nondet", true);                           \
   m.state->addQuantVar(nondet);                                             \
-  expr cmp = expr::mkIf(getBid() == rhs.getBid(),                           \
-                      getOffset().op(rhs.getOffset()), nondet);             \
+  expr nondet_cond = getBid() == rhs.getBid() && ::inbounds(*this, false) &&\
+                     ::inbounds(rhs, false);                                \
+  expr cmp = expr::mkIf(move(nondet_cond), getOffset().op(rhs.getOffset()), \
+                                           move(nondet));                   \
   if (observes_addresses()) {                                               \
     return                                                                  \
       { expr::mkIf(rhs.isNullBlock() || isNullBlock(),                      \
@@ -572,16 +589,6 @@ DEFINE_CMP(ule)
 DEFINE_CMP(ult)
 DEFINE_CMP(uge)
 DEFINE_CMP(ugt)
-
-static expr inbounds(const Pointer &p, bool strict) {
-  if (isUndef(p.getOffset()))
-    return false;
-
-  // equivalent to offset >= 0 && offset <= block_size
-  // because block_size u<= 0x7FFF..FF
-  return strict ? p.getOffsetSizet().ult(p.blockSize()) :
-                  p.getOffsetSizet().ule(p.blockSize());
-}
 
 expr Pointer::inbounds(bool simplify_ptr, bool strict) {
   if (!simplify_ptr)
