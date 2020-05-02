@@ -845,6 +845,10 @@ public:
         attrs |= Input::ReadNone;
         continue;
 
+      case llvm::Attribute::NoAlias:
+        // Ignore;
+        continue;
+
       default:
         *out << "ERROR: Unsupported attribute: " << attr.getAsString() << '\n';
         return {};
