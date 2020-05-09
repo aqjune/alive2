@@ -345,8 +345,7 @@ static StateValue bytesToValue(const Memory &m, const vector<Byte> &bytes,
 }
 
 static bool observes_addresses() {
-  return
-    IR::has_ptr2int || IR::has_int2ptr || (IR::has_null_block && IR::has_ptrcmp);
+  return IR::has_ptr2int || IR::has_int2ptr || IR::has_ptrcmp;
 }
 
 static bool ptr_has_local_bit() {
@@ -534,13 +533,8 @@ expr Pointer::operator!=(const Pointer &rhs) const {
 }
 
 StateValue Pointer::eq(const Pointer &rhs) const {
-  if (observes_addresses()) {
-    return
-      { expr::mkIf(rhs.isNullBlock() || isNullBlock(),
-                   getAddress() == rhs.getAddress(), *this == rhs), true };
-  }
-  assert(!has_null_block);
-  return { *this == rhs, true };
+  assert(observes_addresses());
+  return { getAddress() == rhs.getAddress(), true };
 }
 
 StateValue Pointer::ne(const Pointer &rhs) const {
@@ -550,18 +544,8 @@ StateValue Pointer::ne(const Pointer &rhs) const {
 
 #define DEFINE_CMP(op)                                                      \
 StateValue Pointer::op(const Pointer &rhs) const {                          \
-  /* Note that attrs are not compared. */                                   \
-  expr nondet = expr::mkFreshVar("nondet", true);                           \
-  m.state->addQuantVar(nondet);                                             \
-  expr cmp = expr::mkIf(getBid() == rhs.getBid(),                           \
-                      getOffset().op(rhs.getOffset()), nondet);             \
-  if (observes_addresses()) {                                               \
-    return                                                                  \
-      { expr::mkIf(rhs.isNullBlock() || isNullBlock(),                      \
-                   getAddress().op(rhs.getAddress()), move(cmp)), true };   \
-  }                                                                         \
-  assert(!has_null_block);                                                  \
-  return { move(cmp), true };                                               \
+  assert(observes_addresses()); \
+  return { getAddress().op(rhs.getAddress()), true }; \
 }
 
 DEFINE_CMP(sle)

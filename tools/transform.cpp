@@ -575,8 +575,10 @@ static void calculateAndInitConstants(Transform &t) {
           min_access_size = gcd(min_access_size, getCommonAccessSize(t));
 
         } else if (auto *ic = dynamic_cast<const ICmp *>(&i)) {
-          if (hasPtr(ic->getOperandType()))
+          if (hasPtr(ic->getOperandType())) {
+            has_ptrcmp = true;
             cur_max_gep = UINT64_MAX;
+          }
         }
       }
     }
