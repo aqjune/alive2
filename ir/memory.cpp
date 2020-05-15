@@ -814,8 +814,8 @@ expr Pointer::blockValRefined(const Pointer &other) const {
   // allow null ptr <-> zero
   // If ptr points to a null block with ofs, its integer address is compared.
   // Relevant transformations:
-  //   store ty* null  <-> memset i8 0
-  //   store ty* undef  -> memset i8 undef
+  //   store ty* null  -> memset i8 0
+  //   store ty* undef -> memset i8 undef
   expr intval;
   if (val.isValid()) {
     expr ofs = val.ptr().getOffset();
@@ -827,13 +827,10 @@ expr Pointer::blockValRefined(const Pointer &other) const {
   // val is (null, ofs), val2 is ofs
   expr refine_ptrint = val.ptr().isNull(false) && !val2.isPoison(false) &&
                        intval == val2.nonptrValue();
-  // val is 0, val2 is nullptr
-  expr refine_intptr =
-    !val2.isPoison(false) && val.nonptrValue() == 0 && val2.ptr().isNull();
   return val.isPoison() ||
          expr::mkIf(is_ptr,
             expr::mkIf(is_ptr2, ptr_cnstr, refine_ptrint),
-            expr::mkIf(is_ptr2, refine_intptr, int_cnstr));
+            expr::mkIf(is_ptr2, expr(false), int_cnstr));
 }
 
 expr Pointer::blockRefined(const Pointer &other) const {
