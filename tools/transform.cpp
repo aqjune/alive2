@@ -108,7 +108,7 @@ static void error(Errors &errs, State &src_state, State &tgt_state,
                   print_var_val_ty print_var_val) {
 
   if (r.isInvalid()) {
-    errs.add("Invalid expr", false);
+    errs.add("Invalid expr: " + r.getReason(), false);
     return;
   }
 

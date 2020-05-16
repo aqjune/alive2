@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <utility>
 #include <vector>
 #include <z3.h>
@@ -322,7 +323,11 @@ void Solver::check(initializer_list<E> queries) {
   for (auto &[q, error] : queries) {
     if (!q.isValid()) {
       ++num_invalid;
-      error(Result::INVALID);
+      Result r = Result::INVALID;
+      stringstream ss;
+      ss << q;
+      r.reason = ss.str();
+      error(r);
       return;
     }
 

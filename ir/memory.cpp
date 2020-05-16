@@ -452,7 +452,7 @@ expr Pointer::getValue(const char *name, const FunctionExpr &local_fn,
                        const FunctionExpr &nonlocal_fn,
                        const expr &ret_type, bool src_name) const {
   if (!p.isValid())
-    return {};
+    return { p.getError(p) };
 
   auto bid = getShortBid();
   expr non_local;
@@ -1631,7 +1631,7 @@ expr Memory::ptr2int(const expr &ptr) const {
 expr Memory::int2ptr(const expr &val) const {
   assert(!memory_unused());
   // TODO
-  return {};
+  return expr::IntToPtr;
 }
 
 pair<expr,Pointer>

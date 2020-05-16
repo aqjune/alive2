@@ -75,14 +75,14 @@ public:
     assert(isSat());
     return m;
   }
+  std::string reason;
 
 private:
   Model m;
   answer a;
-  std::string reason;
 
   Result(answer a) : a(a) {}
-  Result(answer a, std::string &&reason) : a(a), reason(std::move(reason)) {}
+  Result(answer a, std::string &&reason) : reason(std::move(reason)), a(a) {}
   Result(Z3_model m) : m(m), a(SAT) {}
 
   friend class Solver;

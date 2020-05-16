@@ -68,7 +68,11 @@ class expr {
   bool isBinOp(expr &a, expr &b, int z3op) const;
 
 public:
+  enum Error {
+    Unknown, FloatingPt, IntToPtr, InvalidFn
+  };
   expr() : ptr(0) {}
+  expr(Error err) : ptr((uint64_t)err) {}
 
   expr(expr &&other) : ptr(0) {
     std::swap(ptr, other.ptr);
@@ -106,7 +110,7 @@ public:
   // structural equivalence
   bool eq(const expr &rhs) const;
 
-  bool isValid() const { return ptr != 0; }
+  bool isValid() const { return ptr >= 8; }
 
   bool isConst() const;
   bool isBV() const;
@@ -323,6 +327,16 @@ public:
   }
   static bool allValid(const expr &e) { return e.isValid(); }
   static bool allValid() { return true; }
+  static Error getError(const expr &a) {
+    return (Error)a.ptr;
+  }
+  template <typename... Exprs>
+  static Error getError(const expr &a, Exprs&&... exprs) {
+    if (!a.isValid())
+      return (Error)a.ptr;
+    return getError(exprs...);
+  }
+  static Error getError() { return Unknown; }
 
   friend class Solver;
   friend class Model;

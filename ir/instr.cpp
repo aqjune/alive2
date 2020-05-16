@@ -278,13 +278,13 @@ static StateValue fm_poison(State &s, expr a, expr b, expr c,
       non_poison &= !val.isInf();
   }
   if (fmath.flags & FastMathFlags::ARCP)
-    non_poison &= expr(); // TODO
+    non_poison &= expr(expr::FloatingPt); // TODO
   if (fmath.flags & FastMathFlags::Contract)
-    non_poison &= expr(); // TODO
+    non_poison &= expr(expr::FloatingPt); // TODO
   if (fmath.flags & FastMathFlags::Reassoc)
-    non_poison &= expr(); // TODO
+    non_poison &= expr(expr::FloatingPt); // TODO
   if (fmath.flags & FastMathFlags::AFN)
-    non_poison &= expr(); // TODO
+    non_poison &= expr(expr::FloatingPt); // TODO
   if (fmath.flags & FastMathFlags::NSZ && !only_input)
     val = any_fp_zero(s, move(val));
 
@@ -531,8 +531,8 @@ StateValue BinOp::toSMT(State &s) const {
   case FRem:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       // TODO; Z3 has no support for LLVM's frem which is actually an fmod
-      return fm_poison(s, a, b, [](expr &a, expr &b) { return expr(); }, fmath,
-                       false);
+      return fm_poison(s, a, b, [](expr &a, expr &b)
+          { return expr(expr::FloatingPt); }, fmath, false);
     };
     break;
 
@@ -736,7 +736,7 @@ StateValue UnaryOp::toSMT(State &s) const {
   case FNeg:
     // TODO
     if (!fmath.isNone())
-      return {};
+      return { expr::FloatingPt, expr::FloatingPt };
     fn = [](auto v) { return v.fneg(); };
     break;
   }
@@ -1375,7 +1375,7 @@ static StateValue pack_return(Type &ty, vector<StateValue> &vals,
 
 StateValue FnCall::toSMT(State &s) const {
   if (!valid) {
-    s.addUB(expr());
+    s.addUB(expr(expr::InvalidFn));
     return {};
   }
 
