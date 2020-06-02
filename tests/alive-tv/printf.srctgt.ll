@@ -1,3 +1,4 @@
+; TEST-ARGS: -io-nobuiltin
 @.str = private unnamed_addr constant [3 x i8] c"%d\00", align 1
 
 define i32 @src() {

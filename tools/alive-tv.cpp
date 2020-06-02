@@ -100,7 +100,7 @@ static llvm::cl::opt<unsigned> opt_omit_array_size(
 
 static llvm::cl::opt<bool> opt_io_nobuiltin(
     "io-nobuiltin",
-    llvm::cl::desc("Do not assume that I/O functions like printf are builtin"),
+    llvm::cl::desc("Encode builtin I/O functions as an unknown function"),
     llvm::cl::cat(opt_alive), llvm::cl::init(false));
 
 static llvm::cl::opt<unsigned> opt_max_mem(

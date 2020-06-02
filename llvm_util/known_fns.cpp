@@ -10,7 +10,7 @@
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include <vector>
-
+#include <iostream>
 using namespace IR;
 using namespace std;
 
@@ -42,7 +42,7 @@ known_call(llvm::CallInst &i, const llvm::TargetLibraryInfo &TLI,
   auto decl = i.getCalledFunction();
   llvm::LibFunc libfn;
   if (!decl || !TLI.getLibFunc(*decl, libfn) || !TLI.has(libfn))
-    RETURN_FAIL_UNKNOWN();
+    return { nullptr, false };
 
   if (util::config::io_nobuiltin) {
     switch (libfn) {
