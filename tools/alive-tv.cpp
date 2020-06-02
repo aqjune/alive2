@@ -99,8 +99,8 @@ static llvm::cl::opt<unsigned> opt_omit_array_size(
     llvm::cl::cat(opt_alive), llvm::cl::init(-1));
 
 static llvm::cl::opt<bool> opt_io_nobuiltin(
-    "io-nobuiltin",
-    llvm::cl::desc("Encode builtin I/O functions as an unknown function"),
+    "stdio-nobuiltin",
+    llvm::cl::desc("Encode standard I/O functions as an unknown function"),
     llvm::cl::cat(opt_alive), llvm::cl::init(false));
 
 static llvm::cl::opt<unsigned> opt_max_mem(

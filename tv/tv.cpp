@@ -101,7 +101,7 @@ llvm::cl::opt<unsigned> opt_omit_array_size(
 
 llvm::cl::opt<bool> opt_io_nobuiltin(
     "tv-io-nobuiltin",
-    llvm::cl::desc("Encode builtin I/O functions as an unknown function"),
+    llvm::cl::desc("Encode standard I/O functions as an unknown function"),
     llvm::cl::init(false));
 
 ostream *out;
