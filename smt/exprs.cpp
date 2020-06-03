@@ -106,6 +106,16 @@ template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
         continue;
       }
 
+      if (rhs.size() == 1) {
+        auto &[rhs_v, rhs_domain] = *rhs.begin();
+        if (rhs_domain.isTrue()) {
+          for (auto &[lhs_v, lhs_domain]: lhs) {
+            add(lhs_v.concat(rhs_v), c && lhs_domain);
+          }
+          continue;
+        }
+      }
+
       for (auto &[lhs_v, lhs_domain] : lhs) {
         if (auto rhs_val = rhs.lookup(lhs_domain)) {
           add(lhs_v.concat(*rhs_val), c && lhs_domain);
