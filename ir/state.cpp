@@ -224,6 +224,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
   bool reads_memory = !attrs.has(FnAttrs::NoRead);
   bool writes_memory = !attrs.has(FnAttrs::NoWrite);
   bool argmemonly = attrs.has(FnAttrs::ArgMemOnly);
+  bool noret = attrs.has(FnAttrs::NoReturn);
 
   bool all_valid = true;
   for (auto &v : inputs) {
@@ -241,7 +242,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
   // TODO: this doesn't need to compare the full memory, just a subset of fields
   auto call_data_pair
     = fn_call_data[name].try_emplace({ move(inputs), move(ptr_inputs),
-                                       memory, reads_memory, argmemonly });
+                                       memory, reads_memory, argmemonly, noret });
   auto &I = call_data_pair.first;
   bool inserted = call_data_pair.second;
 
@@ -379,14 +380,15 @@ void State::mkAxioms(State &tgt) {
   // doesn't seem to be needed in practice for optimizations
   // since there's no introduction of calls in tgt
   for (auto &[fn, data] : fn_call_data) {
+    auto &data2 = tgt.fn_call_data.at(fn);
+
     for (auto I = data.begin(), E = data.end(); I != E; ++I) {
-      auto &[ins, ptr_ins, mem, reads, argmem] = I->first;
+      auto &[ins, ptr_ins, mem, reads, argmem, noret] = I->first;
       auto &[rets, ub, mem_state, used] = I->second;
       assert(used); (void)used;
 
-      auto &data2 = tgt.fn_call_data.at(fn);
       for (auto I2 = data2.begin(), E2 = data2.end(); I2 != E2; ++I2) {
-        auto &[ins2, ptr_ins2, mem2, reads2, argmem2] = I2->first;
+        auto &[ins2, ptr_ins2, mem2, reads2, argmem2, noret2] = I2->first;
         auto &[rets2, ub2, mem_state2, used2] = I2->second;
 
         if (!used2 || reads != reads2 || argmem != argmem2)
@@ -415,7 +417,13 @@ void State::mkAxioms(State &tgt) {
                       .fninputRefined(Pointer(mem2, ptr_in2.value), is_byval2);
           refines &= ptr_in.non_poison
                        .implies(eq_val && ptr_in2.non_poison);
+
+          if (refines.isFalse())
+            break;
         }
+
+        if (refines.isFalse())
+          continue;
 
         if (reads2) {
           auto restrict_ptrs = argmem2 ? &ptr_ins2 : nullptr;
@@ -423,15 +431,19 @@ void State::mkAxioms(State &tgt) {
           refines &= mem_refined;
         }
 
-        expr ref_expr(true);
-        for (unsigned i = 0, e = rets.size(); i != e; ++i) {
-          ref_expr &=
-            rets[i].non_poison.implies(rets2[i].non_poison &&
-                                       rets[i].value == rets2[i].value);
+        expr output(true);
+        // If noret != noret2, refinement check will successfully raise
+        // "Source and target don't have the same return domain".
+        if (!noret && !noret2) {
+          expr ref_expr(true);
+          for (unsigned i = 0, e = rets.size(); i != e; ++i) {
+            ref_expr &=
+              rets[i].non_poison.implies(rets2[i].non_poison &&
+                                        rets[i].value == rets2[i].value);
+          }
+          output = move(ref_expr) && mem_state.implies(mem_state2);
         }
-        tgt.addPre(refines.implies(ref_expr &&
-                                   ub.implies(ub2) &&
-                                   mem_state.implies(mem_state2)));
+        tgt.addPre(refines.implies(move(output) && ub.implies(ub2)));
       }
     }
   }

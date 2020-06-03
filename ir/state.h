@@ -93,11 +93,12 @@ private:
     std::vector<StateValue> args_nonptr;
     std::vector<Memory::PtrInput> args_ptr;
     Memory m;
-    bool readsmem, argmemonly;
+    bool readsmem, argmemonly, noreturn;
     bool operator<(const FnCallInput &rhs) const {
-      return std::tie(args_nonptr, args_ptr, m, readsmem, argmemonly) <
+      return std::tie(args_nonptr, args_ptr, m, readsmem, argmemonly,
+                      noreturn) <
              std::tie(rhs.args_nonptr, rhs.args_ptr, rhs.m, rhs.readsmem,
-                      rhs.argmemonly);
+                      rhs.argmemonly, rhs.noreturn);
     }
   };
   struct FnCallOutput {
