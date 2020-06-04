@@ -320,7 +320,6 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
   expr dom = dom_a && dom_b;
 
   pre_tgt &= src_state.getOOM()();
-  pre_tgt &= !tgt_state.sinkDomain();
   pre_tgt &= src_state.getPre(true)();
   pre_tgt &= tgt_state.getPre(true)();
 
@@ -332,6 +331,12 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
   auto &ptr_refinement = ptr_refinement0;
   auto memory_cnstr = value_cnstr && memory_cnstr0;
 
+  if (check_expr(axioms_expr && (pre_src && pre_tgt)).isUnsat()) {
+    errs.add("Precondition is always false (unrelated with loop)", false);
+    return;
+  }
+
+  pre_tgt &= !tgt_state.sinkDomain();
   if (check_expr(axioms_expr && (pre_src && pre_tgt)).isUnsat()) {
     errs.add("Precondition is always false", false);
     return;
