@@ -2613,8 +2613,13 @@ void Store::print(std::ostream &os) const {
 StateValue Store::toSMT(State &s) const {
   auto &[p, np] = s[*ptr];
   s.addUB(np);
+  auto ps = s.getUndefVars(*ptr);
+
   auto &v = s[*val];
-  s.getMemory().store(p, v, val->getType(), align, s.getUndefVars());
+  auto vs = s.getUndefVars(*val);
+  vs.insert(ps.begin(), ps.end());
+
+  s.getMemory().store(p, v, val->getType(), align, vs);
   return {};
 }
 
@@ -2658,11 +2663,19 @@ void Memset::print(ostream &os) const {
 
 StateValue Memset::toSMT(State &s) const {
   auto &[vptr, np_ptr] = s[*ptr];
+  auto ps = s.getUndefVars(*ptr);
+
   auto &[vbytes, np_bytes] = s[*bytes];
+  auto bs = s.getUndefVars(*bytes);
+
   s.addUB((vbytes != 0).implies(np_ptr));
   s.addUB(np_bytes);
-  s.getMemory().memset(vptr, s[*val].zextOrTrunc(8), vbytes, align,
-                       s.getUndefVars());
+  auto &sv = s[*val];
+  auto vs = s.getUndefVars(*val);
+  vs.insert(ps.begin(), ps.end());
+  vs.insert(bs.begin(), bs.end());
+
+  s.getMemory().memset(vptr, sv.zextOrTrunc(8), vbytes, align, vs);
   return {};
 }
 
