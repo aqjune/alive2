@@ -1500,8 +1500,8 @@ expr expr::load(const expr &idx, const expr *stop_simplifying_if) const {
     expr cmp = (idx == str_idx).simplify();
     if (cmp.isTrue())
       return val;
-    bool stop_simpl = stop_simplifying_if && stop_simplifying_if->eq(array);
-    if (cmp.isFalse() && !stop_simpl)
+    if (cmp.isFalse() &&
+        (!stop_simplifying_if || !stop_simplifying_if->eq(array)))
       return array.load(idx);
 
   } else if (isConstArray(val)) {
