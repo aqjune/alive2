@@ -13,7 +13,7 @@ PASSES="argpromotion deadargelim globalopt hotcoldsplit inline ipconstprop ipscc
 PASSES_SIMPLIFYLIB="-instcombine -Os -Oz -O1 -O2 -O3"
 
 TV="-tv"
-IO_NOBUILTIN="-tv-io-nobuiltin"
+NO_KNOWNFNS="-tv-no-knownfns"
 for arg in $@; do
   for p in $PASSES; do
     if [[ $arg == *"$p"* ]]; then
@@ -23,7 +23,7 @@ for arg in $@; do
   done
   for p in $PASSES_SIMPLIFYLIB; do
     if [[ $arg == "$p" ]]; then
-      IO_NOBUILTIN=""
+      NO_KNOWNFNS=""
       break
     fi
   done
@@ -36,4 +36,4 @@ else
   # Linux, Cygwin/Msys, or Win32?
   TV_SHAREDLIB=tv.so
 fi
-timeout 1000 $HOME/llvm/build/bin/opt -load=$HOME/alive2/build/tv/$TV_SHAREDLIB -tv-exit-on-error $TV $@ $TV -tv-smt-to=10000 -tv-report-dir=$HOME/alive2/build/logs -tv-smt-stats $IO_NOBUILTIN
+timeout 1000 $HOME/llvm/build/bin/opt -load=$HOME/alive2/build/tv/$TV_SHAREDLIB -tv-exit-on-error $TV $@ $TV -tv-smt-to=10000 -tv-report-dir=$HOME/alive2/build/logs -tv-smt-stats $NO_KNOWNFNS

@@ -11,7 +11,7 @@ extern bool symexec_print_each_value;
 
 extern bool skip_smt;
 
-extern bool io_nobuiltin;
+extern bool no_knownfns;
 
 extern bool disable_poison_input;
 

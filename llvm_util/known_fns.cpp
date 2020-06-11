@@ -44,32 +44,6 @@ known_call(llvm::CallInst &i, const llvm::TargetLibraryInfo &TLI,
   if (!decl || !TLI.getLibFunc(*decl, libfn) || !TLI.has(libfn))
     RETURN_FAIL_UNKNOWN();
 
-  if (util::config::io_nobuiltin) {
-    switch (libfn) {
-    case llvm::LibFunc_printf:
-    case llvm::LibFunc_putc:
-    case llvm::LibFunc_putchar:
-    case llvm::LibFunc_puts:
-    case llvm::LibFunc_scanf:
-    case llvm::LibFunc_fclose:
-    case llvm::LibFunc_ferror:
-    case llvm::LibFunc_fgetc:
-    case llvm::LibFunc_fprintf:
-    case llvm::LibFunc_fputc:
-    case llvm::LibFunc_fputs:
-    case llvm::LibFunc_fread:
-    case llvm::LibFunc_fscanf:
-    case llvm::LibFunc_fwrite:
-    case llvm::LibFunc_lstat:
-    case llvm::LibFunc_perror:
-    case llvm::LibFunc_read:
-    case llvm::LibFunc_write:
-      RETURN_FAIL_UNKNOWN();
-    default:
-      break;
-    }
-  }
-
   switch (libfn) {
   case llvm::LibFunc_memset: // void* memset(void *ptr, int val, size_t bytes)
     BB.addInstr(make_unique<Memset>(*args[0], *args[1], *args[2], 1));
@@ -95,6 +69,8 @@ known_call(llvm::CallInst &i, const llvm::TargetLibraryInfo &TLI,
                           libfn == llvm::LibFunc_bcmp));
   }
   default:
+    if (util::config::no_knownfns)
+      RETURN_FAIL_UNKNOWN();
     RETURN_FAIL_KNOWN();
   }
 }
