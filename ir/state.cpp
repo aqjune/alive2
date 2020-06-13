@@ -241,6 +241,11 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     return vector<StateValue>(out_types.size());
   }
 
+  if (reads_memory) {
+    auto &uvs = memory.getUndefVars();
+    undef_vars.insert(uvs.begin(), uvs.end());
+  }
+
   for (auto &v : ptr_inputs) {
     if (!v.nocapture && v.val.non_poison.isTrue()) {
       Pointer p(memory, v.val.value);
