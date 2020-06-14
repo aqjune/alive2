@@ -6,6 +6,7 @@
 #include "tools/transform.h"
 #include "util/config.h"
 #include "util/version.h"
+#include "util/stopwatch.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Triple.h"
@@ -273,7 +274,12 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
   Transform t;
   t.src = move(*Func1);
   t.tgt = move(*Func2);
+
+  StopWatch preproc_watch;
   t.preprocess();
+  preproc_watch.stop();
+  cout << "Preproc time: " << preproc_watch.seconds() << "\n";
+
   TransformVerify verifier(t, false);
   if (!opt_succinct)
     t.print(cout, print_opts);
