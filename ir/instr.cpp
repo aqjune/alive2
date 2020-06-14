@@ -2318,7 +2318,7 @@ StateValue Calloc::toSMT(State &s) const {
                                             nonnull);
 
   expr calloc_sz = expr::mkIf(allocated, size, expr::mkUInt(0, sz.bits()));
-  s.getMemory().memset(p, { expr::mkUInt(0, 8), true }, calloc_sz, align, {});
+  s.getMemory().memset(p, { expr::mkUInt(0, 8), true }, calloc_sz, align, {}, {});
 
   return { move(p), move(np) };
 }
@@ -2605,10 +2605,12 @@ void Store::print(std::ostream &os) const {
 }
 
 StateValue Store::toSMT(State &s) const {
+  auto p_undefs = s.getUndefVars(*ptr);
   auto &[p, np] = s[*ptr];
   s.addUB(np);
+  auto v_undefs = s.getUndefVars(*val);
   auto &v = s[*val];
-  s.getMemory().store(p, v, val->getType(), align, s.getUndefVars());
+  s.getMemory().store(p, v, val->getType(), align, p_undefs, v_undefs);
   return {};
 }
 
@@ -2651,12 +2653,14 @@ void Memset::print(ostream &os) const {
 }
 
 StateValue Memset::toSMT(State &s) const {
+  auto p_undefs = s.getUndefVars(*ptr);
   auto &[vptr, np_ptr] = s[*ptr];
+  auto p_vals = s.getUndefVars(*bytes);
   auto &[vbytes, np_bytes] = s[*bytes];
   s.addUB((vbytes != 0).implies(np_ptr));
   s.addUB(np_bytes);
   s.getMemory().memset(vptr, s[*val].zextOrTrunc(8), vbytes, align,
-                       s.getUndefVars());
+                       p_undefs, p_vals);
   return {};
 }
 

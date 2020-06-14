@@ -1501,13 +1501,14 @@ unsigned Memory::getStoreByteSize(const Type &ty) {
 }
 
 void Memory::store(const expr &p, const StateValue &v, const Type &type,
-                   unsigned align, const set<expr> &undef_vars0,
-                   bool deref_check) {
+                   unsigned align, const set<expr> &undef_vars_ptr,
+                   const set<expr> &undef_vars_val, bool deref_check) {
   assert(!memory_unused());
   Pointer ptr(*this, p);
   unsigned bytesz = bits_byte / 8;
 
-  undef_vars.insert(undef_vars0.begin(), undef_vars0.end());
+  undef_vars.insert(undef_vars_ptr.begin(), undef_vars_ptr.end());
+  undef_vars.insert(undef_vars_val.begin(), undef_vars_val.end());
 
   // initializer stores are ok by construction
   if (deref_check && !state->isInitializationPhase())
@@ -1522,7 +1523,7 @@ void Memory::store(const expr &p, const StateValue &v, const Type &type,
         continue;
       auto ptr_i = ptr + byteofs;
       auto align_i = gcd(align, byteofs % align);
-      store(ptr_i(), aty->extract(v, i), child, align_i, {}, false);
+      store(ptr_i(), aty->extract(v, i), child, align_i, {}, {}, false);
       byteofs += getStoreByteSize(child);
     }
     assert(byteofs == getStoreByteSize(type));
@@ -1595,13 +1596,15 @@ static expr ptr_deref_within(const Pointer &idx, const Pointer &ptr,
 }
 
 void Memory::memset(const expr &p, const StateValue &val, const expr &bytesize,
-                    unsigned align, const set<expr> &undef_vars0) {
+                    unsigned align, const set<expr> &undef_vars_ptr,
+                    const set<expr> &undef_vars_val) {
   assert(!memory_unused());
   assert(!val.isValid() || val.bits() == 8);
   unsigned bytesz = bits_byte / 8;
   Pointer ptr(*this, p);
   state->addUB(ptr.isDereferenceable(bytesize, align, true));
-  undef_vars.insert(undef_vars0.begin(), undef_vars0.end());
+  undef_vars.insert(undef_vars_ptr.begin(), undef_vars_ptr.end());
+  undef_vars.insert(undef_vars_val.begin(), undef_vars_val.end());
 
   auto wval = val;
   for (unsigned i = 1; i < bytesz; ++i) {

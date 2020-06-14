@@ -87,6 +87,10 @@ const StateValue& State::operator[](const Value &val) {
   return tmp_values[i_tmp_values++] = move(sval_new);
 }
 
+const set<expr> &State::getUndefVars(const Value &val) const {
+  return get<1>(values[values_map.at(&val)]).second;
+}
+
 const StateValue& State::getAndAddUndefs(const Value &val) {
   auto &v = (*this)[val];
   for (auto uvar: at(val).second)
