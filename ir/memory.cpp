@@ -795,9 +795,10 @@ expr Pointer::fninputRefined(const Pointer &other, bool is_byval_arg) const {
 expr Pointer::blockValRefined(const Pointer &other) const {
   if (m.non_local_block_val.eq(other.m.non_local_block_val))
     return true;
-
-  Byte val(m, m.non_local_block_val.load(shortPtr()));
-  Byte val2(other.m, other.m.non_local_block_val.load(other.shortPtr()));
+  Byte val(m, m.non_local_block_val.load(
+      shortPtr(), &m.initial_non_local_block_val));
+  Byte val2(other.m, other.m.non_local_block_val.load(
+      other.shortPtr(), &other.m.initial_non_local_block_val));
 
   // refinement if offset had non-ptr value
   expr np1 = val.nonptrNonpoison();
@@ -1075,6 +1076,7 @@ Memory::Memory(State &state) : state(&state) {
     return;
 
   non_local_block_val = mk_block_val_array();
+  non_local_block_val_var = non_local_block_val;
   non_local_block_liveness = mk_liveness_array();
 
   // Non-local blocks cannot initially contain pointers to local blocks
@@ -1263,8 +1265,7 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) const {
 
   // TODO: handle havoc of local blocks
 
-  auto blk_val = mk_block_val_array();
-  st.block_val_var = expr::mkFreshVar("blk_val", blk_val);
+  st.block_val_var = expr::mkFreshVar("blk_val", non_local_block_val_var);
 
   {
     Pointer p(*this, "#idx", false);
@@ -1281,8 +1282,10 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) const {
       }
     }
 
-    st.non_local_block_val
-      = initial_non_local_block_val.subst(blk_val, st.block_val_var);
+    st.initial_non_local_block_val
+      = initial_non_local_block_val.subst(non_local_block_val_var,
+                                          st.block_val_var);
+    st.non_local_block_val = st.initial_non_local_block_val;
 
     if (!modifies.isTrue()) {
       auto idx = p.shortPtr();
@@ -1330,6 +1333,8 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) const {
 
 void Memory::setState(const Memory::CallState &st) {
   non_local_block_val = st.non_local_block_val;
+  non_local_block_val_var = st.block_val_var;
+  initial_non_local_block_val = st.initial_non_local_block_val;
   non_local_block_liveness = st.non_local_block_liveness;
   mk_nonlocal_val_axioms(*state, *this, non_local_block_val);
 }
