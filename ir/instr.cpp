@@ -2132,6 +2132,9 @@ StateValue Return::toSMT(State &s) const {
   auto &retval = s[*val];
   s.addUB(s.getMemory().checkNocapture());
   addUBForNoCaptureRet(s, retval, val->getType());
+  s.getMemory().markAllocasAsDead();
+  if (!s.isSource())
+    s.getMemory().setLocalBlkMap(Memory::LocalBlkMap::create(s, {}));
 
   auto &attrs = s.getFn().getFnAttrs();
   bool isDeref = attrs.has(FnAttrs::Dereferenceable);
@@ -2417,9 +2420,12 @@ StateValue Calloc::toSMT(State &s) const {
   auto [p, allocated] = s.getMemory().alloc(size, align, Memory::MALLOC,
                                             np && nm.mul_no_uoverflow(sz),
                                             nonnull);
-  p = p.subst(allocated, true).simplify();
+  //p = p.subst(allocated, true).simplify();
 
-  s.getMemory().memset(p, { expr::mkUInt(0, 8), true }, size, align, {}, false);
+  // Fixed due to error at alive-tv/memory/calloc-undef.src.ll
+  expr calloc_sz = expr::mkIf(allocated, size, expr::mkUInt(0, sz.bits()));
+  s.getMemory().memset(p, { expr::mkUInt(0, 8), true }, calloc_sz, align, {},
+      false);
 
   return { move(p), move(np) };
 }

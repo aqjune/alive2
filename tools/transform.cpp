@@ -331,14 +331,23 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
 
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
-  auto [memory_cnstr0, ptr_refinement0] = src_mem.refined(tgt_mem, false);
+  auto [memory_cnstr0, ptr_refinement0, ptr_local_refinement0] =
+      src_mem.refined(tgt_mem, false, true);
   auto &ptr_refinement = ptr_refinement0;
+  auto &ptr_local_refinement = ptr_local_refinement0;
   auto memory_cnstr = memory_cnstr0.isTrue() ? memory_cnstr0
                                              : value_cnstr && memory_cnstr0;
 
   if (!memory_cnstr.isConst()) {
     auto &undef = src_mem.getUndefVars();
     qvars.insert(undef.begin(), undef.end());
+  }
+  const Memory::LocalBlkMap &lbm = tgt_mem.getLocalBlkMap();
+  if (lbm.isValid()) {
+    // Quantify variables used for local block mapping
+    qvars.insert(lbm.getBidVars().begin(), lbm.getBidVars().end());
+    // Encode disjointness of mapped blocks
+    pre_src &= lbm.disjointness(tgt_mem);
   }
 
   if (check_expr(axioms_expr && (pre_src && pre_tgt)).isUnsat()) {
@@ -362,9 +371,26 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
 
   auto print_ptr_load = [&](ostream &s, const Model &m) {
     Pointer p(src_mem, m[ptr_refinement()]);
-    s << "\nMismatch in " << p
+    s << "\nMismatch in memory"
+      << "\n  Nonlocal area: " << p
       << "\nSource value: " << Byte(src_mem, m[src_mem.load(p)()])
       << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p)()]);
+
+    if (src_mem.numLocals() && tgt_mem.numLocals()) {
+      Pointer p_local_tgt(tgt_mem, m[ptr_local_refinement()]);
+      expr src_bid = m[tgt_mem.getLocalBlkMap().get(p_local_tgt.getShortBid())];
+      uint64_t src_bid_const;
+      bool is_uint = src_bid.isUInt(src_bid_const);
+      (void)is_uint;
+      assert(is_uint);
+      if (src_bid_const < src_mem.numLocals()) {
+        Pointer p_local_src(src_mem, src_bid_const, p_local_tgt.getOffset(), true);
+
+        s << "\n  Local area: tgt: " << p_local_tgt
+          << "\nSource value: " << Byte(src_mem, m[src_mem.load(p_local_src)()])
+          << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p_local_tgt)()]);
+      }
+    }
   };
 
   expr dom_constr;
@@ -559,6 +585,7 @@ static void calculateAndInitConstants(Transform &t) {
   has_int2ptr      = false;
   has_ptr2int      = util::config::addresses_observed;
   has_alloca       = false;
+  has_zero_size_alloca = false;
   has_dead_allocas = false;
   has_malloc       = false;
   has_free         = false;
@@ -627,6 +654,9 @@ static void calculateAndInitConstants(Transform &t) {
           if (auto alloc = dynamic_cast<const Alloc*>(&i)) {
             has_alloca = true;
             has_dead_allocas |= alloc->initDead();
+            if (auto *ci = dynamic_cast<const IntConst *>(&alloc->getSize())) {
+              has_zero_size_alloca |= ci->getInt() ? *ci->getInt() == 0 : false;
+            }
           } else {
             has_malloc |= dynamic_cast<const Malloc*>(&i) != nullptr ||
                           dynamic_cast<const Calloc*>(&i) != nullptr;

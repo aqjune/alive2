@@ -47,13 +47,14 @@ public:
   // Creates a pointer byte that represents i'th byte of p.
   // non_poison should be an one-bit vector or boolean.
   Byte(const Pointer &ptr, unsigned i, const smt::expr &non_poison);
+  Byte(const Pointer &ptr, const smt::expr &ofs, const smt::expr &non_poison);
 
   // Creates a non-pointer byte that has data and non_poison.
   // data and non_poison should have bits_byte bits.
   Byte(const Memory &m, const smt::expr &data, const smt::expr &non_poison);
 
   smt::expr isPtr() const;
-  smt::expr ptrNonpoison() const;
+  smt::expr ptrNonpoison(bool simplify = true) const;
   Pointer ptr() const;
   smt::expr ptrValue() const;
   smt::expr ptrByteoffset() const;
@@ -99,19 +100,25 @@ class Pointer {
                       const smt::FunctionExpr &nonlocal_fn,
                       const smt::expr &ret_type, bool src_name = false) const;
 
+  smt::expr encodeLocalPtrRefinement(const Pointer &other,
+                                     bool use_local_mapping) const;
+  smt::expr encodeByValArgRefinement(const Pointer &otherByval) const;
+
 public:
   Pointer(const Memory &m, const char *var_name,
           const smt::expr &local = false, bool unique_name = true,
           bool align = true, const smt::expr &attr = smt::expr());
   Pointer(const Memory &m, smt::expr p);
   Pointer(const Memory &m, unsigned bid, bool local);
+  Pointer(const Memory &m, unsigned bid, const smt::expr &ofs, bool local);
   Pointer(const Memory &m, const smt::expr &bid, const smt::expr &offset,
           const smt::expr &attrs = smt::expr());
 
   static unsigned totalBits();
   static unsigned totalBitsShort();
 
-  smt::expr isLocal() const;
+  smt::expr isLocal(bool useNumBlocks = true) const;
+  bool localOrNull() const;
 
   smt::expr getBid() const;
   smt::expr getShortBid() const; // same as getBid but ignoring is_local bit
@@ -176,10 +183,13 @@ public:
 
   void stripAttrs();
 
-  smt::expr refined(const Pointer &other) const;
+  // If use_mapping_only is set, use local_blk_map & don't look into its bytes
+  // further
+  smt::expr refined(const Pointer &other, bool use_mapping_only = false) const;
   smt::expr fninputRefined(const Pointer &other, bool is_byval_arg) const;
+  // If check_local is false, investigate nonlocal blocks only
   smt::expr blockValRefined(const Pointer &other) const;
-  smt::expr blockRefined(const Pointer &other) const;
+  smt::expr blockRefined(const Pointer &other, bool is_sameblk) const;
 
   const Memory& getMemory() const { return m; }
 
@@ -192,6 +202,61 @@ public:
 
 
 class Memory {
+public:
+  struct PtrInput {
+    StateValue val;
+    bool byval;
+    bool nocapture;
+
+    PtrInput(StateValue &&v, bool byval, bool nocapture) :
+      val(std::move(v)), byval(byval), nocapture(nocapture) {}
+    bool operator<(const PtrInput &rhs) const {
+      return std::tie(val, byval, nocapture) <
+             std::tie(rhs.val, rhs.byval, rhs.nocapture);
+    }
+  };
+
+  class LocalBlkMap {
+    smt::expr bv_mapped; // BV with 1 bit per tgt bid (bitwidth: num_locals_tgt)
+    smt::expr mp; // shortbid(tgt) -> shortbid(src)
+    std::set<smt::expr> bid_vars;
+
+  public:
+    LocalBlkMap(bool initialize = false);
+    smt::expr has(const smt::expr &local_bid_tgt) const;
+    smt::expr get(const smt::expr &local_bid_tgt, bool fullbid = false) const;
+    smt::expr empty() const;
+    void updateIf(const smt::expr &cond, const smt::expr &local_bid_tgt,
+                  smt::expr &&local_bid_src);
+    bool isValid() const { return bv_mapped.isValid() && mp.isValid(); }
+
+    smt::expr mapped(const smt::expr &local_bid_tgt,
+                     const smt::expr &local_bid_src) const;
+    smt::expr mappedOrEmpty(const smt::expr &local_bid_tgt,
+                            const smt::expr &local_bid_src) const;
+    Pointer mapPtr(const Pointer &ptr_tgt, const Memory &m_src) const;
+    Byte mapByte(const Byte &byte_tgt, const Memory &m_src) const;
+
+    smt::expr disjointness(const Memory &m_tgt) const;
+
+    const auto &getBidVars() const { return bid_vars; }
+
+    // Create an instance by getting the LocalBlkMap of memory and applying
+    // ptr_inputs_tgt which are pointer arguments given to tgt's function call
+    static LocalBlkMap create(State &s_tgt,
+        const std::vector<PtrInput> &ptr_inputs_tgt);
+
+    static LocalBlkMap mkIf(const smt::expr &cond, const LocalBlkMap &then,
+                            const LocalBlkMap &els);
+
+    friend std::ostream &operator<<(std::ostream &os, const LocalBlkMap &m) {
+      os << "- mapped: " << m.bv_mapped << '\n'
+          << "- map: " << m.mp;
+      return os;
+    }
+  };
+
+private:
   State *state;
 
   smt::expr non_local_block_val;  // array: (bid, offset) -> Byte
@@ -200,6 +265,7 @@ class Memory {
 
   smt::expr non_local_block_liveness; // BV w/ 1 bit per bid (1 if live)
   smt::expr local_block_liveness;
+  bool allocasAreDead;
 
   smt::FunctionExpr local_blk_addr; // bid -> (bits_size_t - 1)
   smt::FunctionExpr local_blk_size;
@@ -218,7 +284,15 @@ class Memory {
   void store(const Pointer &p, const smt::expr &val, smt::expr &local,
              smt::expr &non_local);
 
+  // Non-local locations that stored a escaped local pointer
+  std::set<smt::expr> localptr_stored_locs;
+
+  // Mapping escaped local blocks in src and tgt
+  // Note that using this makes sense only when it is in tgt
+  LocalBlkMap local_blk_map;
+
 public:
+
   enum BlockKind {
     MALLOC, CXX_NEW, STACK, GLOBAL, CONSTGLOBAL
   };
@@ -229,11 +303,33 @@ public:
     smt::expr block_val_var;
     smt::expr non_local_block_liveness;
     smt::expr liveness_var;
+    smt::expr local_val;
+    smt::expr local_val_var;
+    LocalBlkMap local_blk_map;
     bool empty = true;
 
   public:
-    smt::expr implies(const CallState &st) const;
+    void setLocalBlkMap(LocalBlkMap &&lbm) { local_blk_map = std::move(lbm); }
+    void setLocalBlkMap(const Memory &m) { local_blk_map = m.local_blk_map; }
+    const LocalBlkMap &getLocalBlkMap() const { return local_blk_map; }
+
+    // Check whether src's call state(this) implies tgt's call state(st).
+    // ptrinputs: (is local, src's input bids, tgt's input bids)
+    smt::expr implies(const CallState &st,
+      const std::vector<std::tuple<smt::expr, smt::expr, smt::expr>> &ptrinputs,
+      const Memory &m_src_beforecall,
+      const Memory &m_tgt_beforecall) const;
     friend class Memory;
+
+    friend std::ostream &operator<<(std::ostream &os, const CallState &m) {
+      os << "non_local_block_val: " << m.non_local_block_val << '\n'
+         << "block_val_var: " << m.block_val_var << '\n'
+         << "non_local_block_liveness: " << m.non_local_block_liveness << '\n'
+         << "liveness_var: " << m.liveness_var << '\n'
+         << "local_blk_map:\n" << m.local_blk_map << '\n'
+         << "local val: " << m.local_val << '\n';
+      return os;
+    }
   };
 
   Memory(State &state);
@@ -247,23 +343,11 @@ public:
   smt::expr mkInput(const char *name, const ParamAttrs &attrs) const;
   std::pair<smt::expr, smt::expr> mkUndefInput(const ParamAttrs &attrs) const;
 
-  struct PtrInput {
-    StateValue val;
-    bool byval;
-    bool nocapture;
-
-    PtrInput(StateValue &&v, bool byval, bool nocapture) :
-      val(std::move(v)), byval(byval), nocapture(nocapture) {}
-    bool operator<(const PtrInput &rhs) const {
-      return std::tie(val, byval, nocapture) <
-             std::tie(rhs.val, rhs.byval, rhs.nocapture);
-    }
-  };
-
   std::pair<smt::expr, smt::expr>
     mkFnRet(const char *name,
             const std::vector<PtrInput> &ptr_inputs) const;
-  CallState mkCallState(const std::vector<PtrInput> *ptr_inputs, bool nofree)
+  CallState mkCallState(const std::vector<PtrInput> &ptr_inputs,
+                        bool argmemonly, bool nofree, bool writes_memory)
       const;
   void setState(const CallState &st);
 
@@ -285,6 +369,9 @@ public:
   // are not checked.
   void free(const smt::expr &ptr, bool unconstrained);
 
+  // Free all allocas.
+  void markAllocasAsDead();
+
   static unsigned getStoreByteSize(const Type &ty);
   void store(const smt::expr &ptr, const StateValue &val, const Type &type,
              unsigned align, const std::set<smt::expr> &undef_vars,
@@ -305,17 +392,26 @@ public:
   smt::expr ptr2int(const smt::expr &ptr) const;
   smt::expr int2ptr(const smt::expr &val) const;
 
-  std::pair<smt::expr,Pointer>
+  // Returns: (refinement formula, nonlocal ptr, local ptr)
+  // If end_of_fun is true, refinement becomes false if there is no mapping
+  // between src escaped local and tgt escaped local
+  std::tuple<smt::expr,Pointer,Pointer>
     refined(const Memory &other,
-            bool skip_constants,
+            bool skip_constants, bool end_of_fun,
             const std::vector<PtrInput> *set_ptrs = nullptr)
       const;
 
   auto& getUndefVars() const { return undef_vars; }
+  // Returns a set of nonlocal pointers that stores an escaped local pointers
+  auto& getPtrsHavingEscapedLocals() const { return localptr_stored_locs; }
 
   // Returns true if a nocapture pointer byte is not in the memory.
   smt::expr checkNocapture() const;
   void escapeLocalPtr(const smt::expr &ptr);
+  smt::expr isEscapedLocal(const smt::expr &short_bid) const;
+  void setLocalBlkMap(const LocalBlkMap &lm);
+  const LocalBlkMap &getLocalBlkMap() const;
+  void clearLocalPtrStoredLocations() { localptr_stored_locs.clear(); }
 
   unsigned numLocals() const;
   unsigned numNonlocals() const;
