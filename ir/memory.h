@@ -178,8 +178,9 @@ public:
 
   smt::expr refined(const Pointer &other) const;
   smt::expr fninputRefined(const Pointer &other, bool is_byval_arg) const;
-  smt::expr blockValRefined(const Pointer &other) const;
-  smt::expr blockRefined(const Pointer &other) const;
+  // If check_local is false, investigate nonlocal blocks only
+  smt::expr blockValRefined(const Pointer &other, bool check_local) const;
+  smt::expr blockRefined(const Pointer &other, bool check_local) const;
 
   const Memory& getMemory() const { return m; }
 
@@ -192,6 +193,28 @@ public:
 
 
 class Memory {
+public:
+  class LocalBlkMap {
+    smt::expr mapped; // BV with 1 bit per tgt bid (bitwidth: num_locals_tgt)
+    smt::expr mp; // shortbid(tgt) -> shortbid(src)
+
+  public:
+    smt::expr has(const smt::expr &local_bid_tgt) const;
+    smt::expr get(const smt::expr &local_bid_tgt) const;
+    void updateIf(const smt::expr &cond, const smt::expr &local_bid_tgt,
+                  smt::expr &&local_bid_src);
+
+    bool operator<(const LocalBlkMap &m) const;
+    static LocalBlkMap empty();
+
+    friend std::ostream &operator<<(std::ostream &os, const LocalBlkMap &m) {
+        os << "- mapped: " << m.mapped << '\n'
+           << "- map: " << m.mp;
+        return os;
+    }
+  };
+
+private:
   State *state;
 
   smt::expr non_local_block_val;  // array: (bid, offset) -> Byte
@@ -214,6 +237,9 @@ class Memory {
 
   std::vector<unsigned> byval_blks;
   std::vector<bool> escaped_local_blks;
+  // Mapping escaped local blocks in src and tgt
+  // Note that using this makes sense only when it is in tgt
+  LocalBlkMap local_blk_map;
 
   std::set<smt::expr> undef_vars;
 
@@ -232,11 +258,26 @@ public:
     smt::expr initial_non_local_block_val;
     smt::expr non_local_block_liveness;
     smt::expr liveness_var;
+    LocalBlkMap local_blk_map;
     bool empty = true;
 
   public:
-    smt::expr implies(const CallState &st) const;
+    // Check whether src's call state(this) implies tgt's call state(st).
+    smt::expr implies(const CallState &st,
+                      const std::vector<smt::expr> &is_ptrinput_local,
+                      const std::vector<smt::expr> &ptrinput_bids_src,
+                      const std::vector<smt::expr> &ptrinput_bids_tgt) const;
     friend class Memory;
+
+    friend std::ostream &operator<<(std::ostream &os, const CallState &m) {
+      os << "non_local_block_val: " << m.non_local_block_val << '\n'
+         << "block_val_var: " << m.block_val_var << '\n'
+         << "non_local_block_liveness: " << m.non_local_block_liveness << '\n'
+         << "liveness_var: " << m.liveness_var << '\n'
+         << "local_blk_map:\n" << m.local_blk_map << '\n';
+      return os;
+    }
+
   };
 
   Memory(State &state);
@@ -266,7 +307,8 @@ public:
   std::pair<smt::expr, smt::expr>
     mkFnRet(const char *name,
             const std::vector<PtrInput> &ptr_inputs) const;
-  CallState mkCallState(const std::vector<PtrInput> *ptr_inputs, bool nofree)
+  CallState mkCallState(const std::vector<PtrInput> &ptr_inputs,
+                        bool argmemonly, bool nofree)
       const;
   void setState(const CallState &st);
 
@@ -308,9 +350,10 @@ public:
   smt::expr ptr2int(const smt::expr &ptr) const;
   smt::expr int2ptr(const smt::expr &val) const;
 
+  // If check_local is false, investigate nonlocal blocks only
   std::pair<smt::expr,Pointer>
     refined(const Memory &other,
-            bool skip_constants,
+            bool skip_constants, bool check_locals,
             const std::vector<PtrInput> *set_ptrs = nullptr)
       const;
 

@@ -739,18 +739,25 @@ expr Pointer::isHeapAllocated() const {
 
 expr Pointer::refined(const Pointer &other) const {
   // This refers to a block that was malloc'ed within the function
-  expr local = getAllocType() == other.getAllocType();
-  local &= blockSize() == other.blockSize();
-  local &= getOffset() == other.getOffset();
+  expr tgt_bid = other.getShortBid();
+  // Q: Why implies() is used at 'has(tgt_bid).implies(..)'?
+  // A: To reduce false positive.
+  // We're not constructing mapping between local blocks that are escaped
+  // by being stored into a nonlocal memory now. So, mapping may not exist.
+  expr local =
+    other.m.local_blk_map.has(tgt_bid).implies(
+      other.m.local_blk_map.get(tgt_bid) == getShortBid());
   // Attributes are ignored at refinement.
 
-  // TODO: this induces an infinite loop
-  //local &= block_refined(other);
+  // TODO: It is fine to check heap blocks only at the return statement,
+  // but for function calls we'll need to check allocas too.
+  // However this will be costly because many functions simply don't have malloc
+  // Let's activate things step by step
+  local = isHeapAllocated().implies(local);
 
   return isBlockAlive().implies(
            other.isBlockAlive() &&
-             expr::mkIf(isLocal(), isHeapAllocated().implies(local),
-                        *this == other));
+             expr::mkIf(isLocal(), move(local), *this == other));
 }
 
 expr Pointer::fninputRefined(const Pointer &other, bool is_byval_arg) const {
@@ -759,36 +766,38 @@ expr Pointer::fninputRefined(const Pointer &other, bool is_byval_arg) const {
   expr size2 = other.blockSize();
   expr off2 = other.getOffsetSizet();
 
-  expr local
-    = expr::mkIf(isHeapAllocated(),
-                 other.isHeapAllocated() && off == off2 && size2.uge(size),
+  expr local =
+       (other.isLocal() || other.isByval() || is_byval_arg) &&
+       isHeapAllocated().implies(other.isHeapAllocated() && off == off2);
+   bool iswrite = !is_byval_arg;
 
-                 // must maintain same dereferenceability before & after
-                 expr::mkIf(off.sle(-1),
-                            off == off2 && size2.uge(size),
-                            off2.sge(0) &&
-                              expr::mkIf(off.sle(size),
-                                         off2.sle(size2) && off2.uge(off) &&
-                                           (size2 - off2).uge(size - off),
-                                         off2.sgt(size2) && off == off2 &&
-                                           size2.uge(size))));
-  local = (other.isLocal() || other.isByval() || is_byval_arg) && local;
+  expr ofs = expr::mkFreshVar("fninput_ofs", expr::mkUInt(0, bits_for_offset));
+  Pointer this_ofs = *this + ofs;
+  Pointer other_ofs = other + ofs;
 
-  // TODO: this induces an infinite loop
-  // block_refined(other);
+  auto this_ofs_deref =
+      this_ofs.isDereferenceable(bits_byte / 8, bits_byte / 8, iswrite);
+  auto other_ofs_deref =
+      other_ofs.isDereferenceable(bits_byte / 8, bits_byte / 8, iswrite);
+
+  local &= this_ofs_deref().implies(
+        other_ofs_deref() && this_ofs.blockValRefined(other_ofs, true));
 
   return isBlockAlive().implies(
            other.isBlockAlive() &&
-             expr::mkIf(isLocal(), local, *this == other));
+             expr::mkIf(isLocal(),
+              other.m.local_blk_map.has(other.getShortBid()) || local,
+              *this == other));
 }
 
-expr Pointer::blockValRefined(const Pointer &other) const {
-  if (m.non_local_block_val.eq(other.m.non_local_block_val))
+expr Pointer::blockValRefined(const Pointer &other, bool check_local) const {
+  if (!check_local && m.non_local_block_val.eq(other.m.non_local_block_val))
     return true;
-  Byte val(m, m.non_local_block_val.load(
-      shortPtr(), &m.initial_non_local_block_val));
-  Byte val2(other.m, other.m.non_local_block_val.load(
-      other.shortPtr(), &other.m.initial_non_local_block_val));
+
+  Byte val = check_local ? m.load(*this) :
+              Byte(m, m.non_local_block_val.load(shortPtr(), &m.initial_non_local_block_val));
+  Byte val2 = check_local ? other.m.load(other) :
+              Byte(other.m, other.m.non_local_block_val.load(other.shortPtr(), &other.m.initial_non_local_block_val));
 
   // refinement if offset had non-ptr value
   expr np1 = val.nonptrNonpoison();
@@ -819,7 +828,7 @@ expr Pointer::blockValRefined(const Pointer &other) const {
                     val.isZero() && !val2.isPoison() && val2.isZero());
 }
 
-expr Pointer::blockRefined(const Pointer &other) const {
+expr Pointer::blockRefined(const Pointer &other, bool check_local) const {
   expr blk_size = blockSize();
   expr val_refines(true);
   uint64_t bytes;
@@ -833,10 +842,11 @@ expr Pointer::blockRefined(const Pointer &other) const {
       expr off_expr = expr::mkUInt(off, bits_for_offset);
       Pointer p(m, bid, off_expr);
       Pointer q(other.m, p());
-      val_refines &= (ptr_offset == off_expr).implies(p.blockValRefined(q));
+      val_refines &= (ptr_offset == off_expr)
+                      .implies(p.blockValRefined(q, check_local));
     }
   } else {
-    val_refines = blockValRefined(other);
+    val_refines = blockValRefined(other, check_local);
   }
 
   assert(isWritable().eq(other.isWritable()));
@@ -1092,7 +1102,10 @@ Memory::Memory(State &state) : state(&state) {
     alloc(expr::mkUInt(0, bits_size_t), bits_program_pointer, GLOBAL, false,
           false, 0);
 
+  // All local blocks are not escaped & unmapped
   escaped_local_blks.resize(numLocals(), false);
+  if (!state.isSource())
+    local_blk_map = LocalBlkMap::empty();
 
   assert(bits_for_offset <= bits_size_t);
 }
@@ -1232,7 +1245,46 @@ Memory::mkFnRet(const char *name,
   return { p.release(), move(var) };
 }
 
-expr Memory::CallState::implies(const CallState &st) const {
+
+expr Memory::LocalBlkMap::has(const smt::expr &short_bid_tgt) const {
+  if (num_locals_src == 0 || num_locals_tgt == 0)
+    return false;
+  return load_bv(mapped, short_bid_tgt);
+}
+
+expr Memory::LocalBlkMap::get(const smt::expr &short_bid_tgt) const {
+  if (num_locals_src == 0 || num_locals_tgt == 0)
+    return expr::mkUInt(0, bits_shortbid());
+  return mp.load(short_bid_tgt);
+}
+
+void Memory::LocalBlkMap::updateIf(const smt::expr &cond,
+                                   const smt::expr &short_bid_tgt,
+                                   smt::expr &&short_bid_src) {
+  auto bid = expr::mkVar("bid", short_bid_tgt.bits());
+  mapped = mapped | (cond.toBVBool().zextOrTrunc(num_locals_tgt)
+                      << short_bid_tgt.zextOrTrunc(num_locals_tgt));
+  mp = expr::mkLambda({ bid },
+    expr::mkIf(cond && (bid == short_bid_tgt), short_bid_src, mp.load(bid)));
+}
+
+Memory::LocalBlkMap Memory::LocalBlkMap::empty() {
+  auto bid = expr::mkVar("bid", bits_shortbid());
+  LocalBlkMap m;
+  m.mapped = expr::mkUInt(0, num_locals_tgt);
+  m.mp = expr::mkLambda({ bid }, expr::mkUInt(0, bits_shortbid()));
+  return m;
+}
+
+bool Memory::LocalBlkMap::operator<(const Memory::LocalBlkMap &rhs) const {
+  return tie(mapped, mp) < tie(rhs.mapped, rhs.mp);
+}
+
+expr Memory::CallState::implies(const CallState &st,
+                                const vector<expr> &is_ptrinput_local,
+                                const vector<expr> &ptrinput_bids_src,
+                                const vector<expr> &ptrinput_bids_tgt)
+    const {
   if (empty || st.empty)
     return true;
   // NOTE: using equality here is an approximation.
@@ -1242,11 +1294,25 @@ expr Memory::CallState::implies(const CallState &st) const {
     ret &= block_val_var == st.block_val_var;
   if (liveness_var.isValid() && st.liveness_var.isValid())
     ret &= liveness_var == st.liveness_var;
+
+  // Given ptr inputs to the function call in src and tgt, relate those which
+  // are local.
+  unsigned i = 0;
+  assert(is_ptrinput_local.size() == ptrinput_bids_src.size() &&
+         is_ptrinput_local.size() == ptrinput_bids_tgt.size());
+  for (i = 0; i < ptrinput_bids_tgt.size(); ++i) {
+    auto &pi_tgt = ptrinput_bids_tgt[i];
+    auto &pi_src = ptrinput_bids_src[i];
+
+    ret &= is_ptrinput_local[i].implies(
+        st.local_blk_map.has(pi_tgt) && st.local_blk_map.get(pi_tgt) == pi_src);
+  }
   return ret;
 }
 
 Memory::CallState
-Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) const {
+Memory::mkCallState(const vector<PtrInput> &ptr_inputs, bool argmemonly,
+                    bool nofree) const {
   CallState st;
   st.empty = false;
 
@@ -1258,9 +1324,9 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) const {
     Pointer p(*this, "#idx", false);
     expr modifies(true);
 
-    if (ptr_inputs) {
+    if (argmemonly) {
       modifies = false;
-      for (auto &[arg, is_byval_arg, is_nocapture_arg] : *ptr_inputs) {
+      for (auto &[arg, is_byval_arg, is_nocapture_arg] : ptr_inputs) {
         // TODO: byval's value cannot be modified.
         (void)is_byval_arg;
         (void)is_nocapture_arg;
@@ -1273,6 +1339,28 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) const {
       = initial_non_local_block_val.subst(non_local_block_val_var,
                                           st.block_val_var);
     st.non_local_block_val = st.initial_non_local_block_val;
+
+    // Escape local blocks that are given to arguments.
+    if (!state->isSource()) {
+      st.local_blk_map = local_blk_map;
+
+      for (auto &[arg, is_byval_arg, is_nocapture_arg] : ptr_inputs) {
+        if (is_byval_arg || is_nocapture_arg) continue;
+        Pointer argp(*this, arg.value);
+        if (argp.isLocal().isFalse())
+          continue;
+
+        auto local_bid_tgt = argp.getShortBid();
+        expr contains = st.local_blk_map.has(local_bid_tgt);
+
+        if (!contains.isTrue()) {
+          expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
+          state->addQuantVar(new_src_bid);
+          st.local_blk_map.updateIf(argp.isLocal() && !contains, local_bid_tgt,
+                                    move(new_src_bid));
+        }
+      }
+    }
 
     if (!modifies.isTrue()) {
       auto idx = p.shortPtr();
@@ -1289,8 +1377,8 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) const {
     expr mask = has_null_block ? one : zero;
     for (unsigned bid = has_null_block; bid < num_nonlocals; ++bid) {
       expr ok_arg = true;
-      if (ptr_inputs) {
-        for (auto &[arg, is_byval_arg, is_nocapture_arg] : *ptr_inputs) {
+      if (argmemonly) {
+        for (auto &[arg, is_byval_arg, is_nocapture_arg] : ptr_inputs) {
           // TODO: liveness of a pointer given as byval doesn't change
           (void)is_byval_arg;
           (void)is_nocapture_arg;
@@ -1323,6 +1411,8 @@ void Memory::setState(const Memory::CallState &st) {
   non_local_block_val_var = st.block_val_var;
   initial_non_local_block_val = st.initial_non_local_block_val;
   non_local_block_liveness = st.non_local_block_liveness;
+  if (!state->isSource())
+    local_blk_map = st.local_blk_map;
   mk_nonlocal_val_axioms(*state, *this, non_local_block_val);
 }
 
@@ -1644,7 +1734,7 @@ expr Memory::int2ptr(const expr &val) const {
 }
 
 pair<expr,Pointer>
-Memory::refined(const Memory &other, bool skip_constants,
+Memory::refined(const Memory &other, bool skip_constants, bool check_locals,
                 const vector<PtrInput> *set_ptrs) const {
   if (num_nonlocals <= has_null_block)
     return { true, Pointer(*this, expr()) };
@@ -1662,7 +1752,22 @@ Memory::refined(const Memory &other, bool skip_constants,
     Pointer q(other, p());
     if ((p.isByval() && q.isByval()).isTrue())
       continue;
-    ret &= (ptr_bid == bid_expr).implies(p.blockRefined(q));
+    ret &= (ptr_bid == bid_expr).implies(p.blockRefined(q, false));
+  }
+
+  if (check_locals) {
+    Pointer ptr_local(*this, "#idx_local_refinement", true);
+    for (unsigned bid = 0; bid < num_locals_tgt; ++bid) {
+      expr bid_expr = expr::mkUInt(bid + (1 << (bits_for_bid - 1)),
+                                   bits_for_bid);
+      Pointer p(*this, bid_expr, ptr_local.getOffset());
+      Pointer q(other, p());
+      auto e = (ptr_local.getBid() == bid_expr &&
+                other.local_blk_map.has(q.getShortBid()) &&
+                other.local_blk_map.get(q.getShortBid()) == p.getShortBid())
+          .implies(p.blockRefined(q, true));
+      ret &= move(e);
+    }
   }
 
   // restrict refinement check to set of request blocks
@@ -1757,14 +1862,14 @@ bool Memory::operator<(const Memory &rhs) const {
   return
     tie(non_local_block_val, local_block_val, initial_non_local_block_val0,
         non_local_block_liveness, local_block_liveness, local_blk_addr,
-        local_blk_size, local_blk_align, local_blk_kind,
+        local_blk_size, local_blk_align, local_blk_kind, local_blk_map,
         non_local_blk_size, non_local_blk_align,
         non_local_blk_kind, byval_blks, escaped_local_blks, undef_vars) <
     tie(rhs.non_local_block_val, rhs.local_block_val,
         rhs.initial_non_local_block_val0,
         rhs.non_local_block_liveness, rhs.local_block_liveness,
         rhs.local_blk_addr, rhs.local_blk_size, rhs.local_blk_align,
-        rhs.local_blk_kind,
+        rhs.local_blk_kind, rhs.local_blk_map,
         rhs.non_local_blk_size, rhs.non_local_blk_align,
         rhs.non_local_blk_kind, rhs.byval_blks, rhs.escaped_local_blks,
         rhs.undef_vars);

@@ -275,8 +275,8 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     I->second
       = { move(values), expr::mkFreshVar(ub_name.c_str(), false),
           writes_memory
-            ? memory.mkCallState(argmemonly ? &I->first.args_ptr : nullptr,
-                               attrs.has(FnAttrs::NoFree))
+            ? memory.mkCallState(I->first.args_ptr, argmemonly,
+                                 attrs.has(FnAttrs::NoFree))
             : Memory::CallState(),
           true };
   } else {
@@ -414,6 +414,9 @@ void State::mkAxioms(State &tgt) {
         if (refines.isFalse())
           continue;
 
+        vector<expr> is_ptrinput_local;
+        vector<expr> ptrinput_bids_src, ptrinput_bids_tgt;
+
         for (unsigned i = 0, e = ptr_ins.size(); i != e; ++i) {
           // TODO: needs to take read/read2 as input to control if mem blocks
           // need to be compared
@@ -426,13 +429,23 @@ void State::mkAxioms(State &tgt) {
             refines = false;
             break;
           }
-          expr eq_val = Pointer(mem, ptr_in.value)
-                      .fninputRefined(Pointer(mem2, ptr_in2.value), is_byval2);
+          Pointer p_src(mem, ptr_in.value), p_tgt(mem2, ptr_in2.value);
+          expr eq_val = p_src.fninputRefined(p_tgt, is_byval2);
           refines &= ptr_in.non_poison
                        .implies(eq_val && ptr_in2.non_poison);
 
           if (refines.isFalse())
             break;
+
+          // byval implies nocapture (by llvm2alive); no need to check byval
+          if (!is_nocapture && !p_tgt.isLocal().isFalse() &&
+              !p_src.isLocal().isFalse()) {
+            // p_tgt.isLocal() and p_src.isLocal() should be equivalent.
+            // This is enforced by p_src.fninputRefined.
+            is_ptrinput_local.emplace_back(p_tgt.isLocal());
+            ptrinput_bids_src.emplace_back(p_src.getShortBid());
+            ptrinput_bids_tgt.emplace_back(p_tgt.getShortBid());
+          }
         }
 
         if (refines.isFalse())
@@ -440,7 +453,7 @@ void State::mkAxioms(State &tgt) {
 
         if (reads2) {
           auto restrict_ptrs = argmem2 ? &ptr_ins2 : nullptr;
-          expr mem_refined = mem.refined(mem2, true, restrict_ptrs).first;
+          expr mem_refined = mem.refined(mem2, true, true, restrict_ptrs).first;
           refines &= mem_refined;
           if (!mem_refined.isConst()) {
             auto &u = mem.getUndefVars();
@@ -454,9 +467,12 @@ void State::mkAxioms(State &tgt) {
             rets[i].non_poison.implies(rets2[i].non_poison &&
                                        rets[i].value == rets2[i].value);
         }
+        expr memstate_implies =
+            mem_state.implies(mem_state2, is_ptrinput_local,
+                              ptrinput_bids_src, ptrinput_bids_tgt);
         tgt.addPre(refines.implies(ref_expr &&
                                    ub.implies(ub2) &&
-                                   mem_state.implies(mem_state2)));
+                                   move(memstate_implies)));
       }
     }
   }
