@@ -249,7 +249,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
 
   // TODO: this doesn't need to compare the full memory, just a subset of fields
   auto call_data_pair
-    = fn_call_data[name].try_emplace({ move(inputs), move(ptr_inputs),
+    = fn_call_data[name].try_emplace({ move(inputs), ptr_inputs,
                                        memory, reads_memory, argmemonly });
   auto &I = call_data_pair.first;
   bool inserted = call_data_pair.second;
@@ -280,7 +280,20 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
             : Memory::CallState(),
           true };
   } else {
-    I->second.used = true;
+    if (!I->second.used) {
+      // Reusing (FnCallInput, FnCallOutput) pair that is created from source
+      // LocalBlkMap should be updated to use target memory
+      auto fc_input = I->first;
+      auto fc_output = I->second;
+      fc_input.m.local_blk_map = memory.local_blk_map;
+      auto lbmap_out = Memory::LocalBlkMap::create(*this, ptr_inputs);
+
+      fc_output.callstate.setLocalBlkMap(move(lbmap_out));
+      fc_output.used = true;
+
+      fn_call_data[name].erase(I);
+      I = fn_call_data[name].emplace(move(fc_input), move(fc_output)).first;
+    }
   }
 
   addUB(I->second.ub);

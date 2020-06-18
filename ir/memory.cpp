@@ -1276,10 +1276,6 @@ Memory::LocalBlkMap Memory::LocalBlkMap::empty() {
   return m;
 }
 
-bool Memory::LocalBlkMap::operator<(const Memory::LocalBlkMap &rhs) const {
-  return tie(mapped, mp) < tie(rhs.mapped, rhs.mp);
-}
-
 expr Memory::CallState::implies(const CallState &st,
                                 const vector<expr> &is_ptrinput_local,
                                 const vector<expr> &ptrinput_bids_src,
@@ -1298,6 +1294,7 @@ expr Memory::CallState::implies(const CallState &st,
   // Given ptr inputs to the function call in src and tgt, relate those which
   // are local.
   unsigned i = 0;
+
   assert(is_ptrinput_local.size() == ptrinput_bids_src.size() &&
          is_ptrinput_local.size() == ptrinput_bids_tgt.size());
   for (i = 0; i < ptrinput_bids_tgt.size(); ++i) {
@@ -1308,6 +1305,31 @@ expr Memory::CallState::implies(const CallState &st,
         st.local_blk_map.has(pi_tgt) && st.local_blk_map.get(pi_tgt) == pi_src);
   }
   return ret;
+}
+
+Memory::LocalBlkMap
+Memory::LocalBlkMap::create(State &st,
+                            const vector<Memory::PtrInput> &ptr_inputs) {
+  Memory &m = st.getMemory();
+  LocalBlkMap lbm = m.local_blk_map;
+
+  for (auto &[arg, is_byval_arg, is_nocapture_arg] : ptr_inputs) {
+    if (is_byval_arg || is_nocapture_arg) continue;
+    Pointer argp(st.getMemory(), arg.value);
+    if (argp.isLocal().isFalse())
+      continue;
+
+    auto local_bid_tgt = argp.getShortBid();
+    expr contains = lbm.has(local_bid_tgt);
+
+    if (!contains.isTrue()) {
+      expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
+      st.addQuantVar(new_src_bid);
+      lbm.updateIf(argp.isLocal() && !contains, local_bid_tgt, move(new_src_bid));
+    }
+  }
+
+  return lbm;
 }
 
 Memory::CallState
@@ -1341,26 +1363,8 @@ Memory::mkCallState(const vector<PtrInput> &ptr_inputs, bool argmemonly,
     st.non_local_block_val = st.initial_non_local_block_val;
 
     // Escape local blocks that are given to arguments.
-    if (!state->isSource()) {
-      st.local_blk_map = local_blk_map;
-
-      for (auto &[arg, is_byval_arg, is_nocapture_arg] : ptr_inputs) {
-        if (is_byval_arg || is_nocapture_arg) continue;
-        Pointer argp(*this, arg.value);
-        if (argp.isLocal().isFalse())
-          continue;
-
-        auto local_bid_tgt = argp.getShortBid();
-        expr contains = st.local_blk_map.has(local_bid_tgt);
-
-        if (!contains.isTrue()) {
-          expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
-          state->addQuantVar(new_src_bid);
-          st.local_blk_map.updateIf(argp.isLocal() && !contains, local_bid_tgt,
-                                    move(new_src_bid));
-        }
-      }
-    }
+    if (!state->isSource())
+      st.local_blk_map = LocalBlkMap::create(*state, ptr_inputs);
 
     if (!modifies.isTrue()) {
       auto idx = p.shortPtr();
@@ -1859,17 +1863,18 @@ bool Memory::operator<(const Memory &rhs) const {
   // FIXME: remove this once we move to C++20
   // NOTE: we don't compare field state so that memories from src/tgt can
   // compare equal
+  // NOTE2: local_blk_map should not be compared because src mem doesn't have it
   return
     tie(non_local_block_val, local_block_val, initial_non_local_block_val0,
         non_local_block_liveness, local_block_liveness, local_blk_addr,
-        local_blk_size, local_blk_align, local_blk_kind, local_blk_map,
+        local_blk_size, local_blk_align, local_blk_kind,
         non_local_blk_size, non_local_blk_align,
         non_local_blk_kind, byval_blks, escaped_local_blks, undef_vars) <
     tie(rhs.non_local_block_val, rhs.local_block_val,
         rhs.initial_non_local_block_val0,
         rhs.non_local_block_liveness, rhs.local_block_liveness,
         rhs.local_blk_addr, rhs.local_blk_size, rhs.local_blk_align,
-        rhs.local_blk_kind, rhs.local_blk_map,
+        rhs.local_blk_kind,
         rhs.non_local_blk_size, rhs.non_local_blk_align,
         rhs.non_local_blk_kind, rhs.byval_blks, rhs.escaped_local_blks,
         rhs.undef_vars);

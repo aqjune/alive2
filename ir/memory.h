@@ -194,6 +194,19 @@ public:
 
 class Memory {
 public:
+  struct PtrInput {
+    StateValue val;
+    bool byval;
+    bool nocapture;
+
+    PtrInput(StateValue &&v, bool byval, bool nocapture) :
+      val(std::move(v)), byval(byval), nocapture(nocapture) {}
+    bool operator<(const PtrInput &rhs) const {
+      return std::tie(val, byval, nocapture) <
+             std::tie(rhs.val, rhs.byval, rhs.nocapture);
+    }
+  };
+
   class LocalBlkMap {
     smt::expr mapped; // BV with 1 bit per tgt bid (bitwidth: num_locals_tgt)
     smt::expr mp; // shortbid(tgt) -> shortbid(src)
@@ -204,8 +217,11 @@ public:
     void updateIf(const smt::expr &cond, const smt::expr &local_bid_tgt,
                   smt::expr &&local_bid_src);
 
-    bool operator<(const LocalBlkMap &m) const;
     static LocalBlkMap empty();
+    // Create an instance by getting the LocalBlkMap of memory and applying
+    // ptr_inputs which are pointer arguments given to a function call
+    static LocalBlkMap create(State &s,
+                              const std::vector<PtrInput> &ptr_inputs);
 
     friend std::ostream &operator<<(std::ostream &os, const LocalBlkMap &m) {
         os << "- mapped: " << m.mapped << '\n'
@@ -239,6 +255,7 @@ private:
   std::vector<bool> escaped_local_blks;
   // Mapping escaped local blocks in src and tgt
   // Note that using this makes sense only when it is in tgt
+public:
   LocalBlkMap local_blk_map;
 
   std::set<smt::expr> undef_vars;
@@ -259,9 +276,11 @@ public:
     smt::expr non_local_block_liveness;
     smt::expr liveness_var;
     LocalBlkMap local_blk_map;
+
     bool empty = true;
 
   public:
+    void setLocalBlkMap(LocalBlkMap &&lbm) { local_blk_map = std::move(lbm); }
     // Check whether src's call state(this) implies tgt's call state(st).
     smt::expr implies(const CallState &st,
                       const std::vector<smt::expr> &is_ptrinput_local,
@@ -278,6 +297,7 @@ public:
       return os;
     }
 
+    void setLocalBlkMap(const Memory &m) { local_blk_map = m.local_blk_map; }
   };
 
   Memory(State &state);
@@ -290,19 +310,6 @@ public:
   void markByVal(unsigned bid);
   smt::expr mkInput(const char *name, const ParamAttrs &attrs) const;
   std::pair<smt::expr, smt::expr> mkUndefInput(const ParamAttrs &attrs) const;
-
-  struct PtrInput {
-    StateValue val;
-    bool byval;
-    bool nocapture;
-
-    PtrInput(StateValue &&v, bool byval, bool nocapture) :
-      val(std::move(v)), byval(byval), nocapture(nocapture) {}
-    bool operator<(const PtrInput &rhs) const {
-      return std::tie(val, byval, nocapture) <
-             std::tie(rhs.val, rhs.byval, rhs.nocapture);
-    }
-  };
 
   std::pair<smt::expr, smt::expr>
     mkFnRet(const char *name,
