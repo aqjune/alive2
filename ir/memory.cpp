@@ -744,8 +744,9 @@ expr Pointer::refined(const Pointer &other) const {
   // A: To reduce false positive.
   // We're not constructing mapping between local blocks that are escaped
   // by being stored into a nonlocal memory now. So, mapping may not exist.
+  // Relevant test: alive-tv/calls/escape-via-global.srctgt.ll
   expr local =
-    other.m.local_blk_map.has(tgt_bid).implies(
+    other.m.local_blk_map.has(tgt_bid) && (
       other.m.local_blk_map.get(tgt_bid) == getShortBid());
   // Attributes are ignored at refinement.
 
@@ -753,6 +754,7 @@ expr Pointer::refined(const Pointer &other) const {
   // but for function calls we'll need to check allocas too.
   // However this will be costly because many functions simply don't have malloc
   // Let's activate things step by step
+  // Relevant test: alive-tv/calls/escape-via-global2.srctgt.ll
   local = isHeapAllocated().implies(local);
 
   return isBlockAlive().implies(
