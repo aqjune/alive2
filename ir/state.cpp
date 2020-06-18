@@ -281,7 +281,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
           true };
   } else {
     if (!I->second.used) {
-      // Reusing (FnCallInput, FnCallOutput) pair that is created from source
+      // Reuse (FnCallInput, FnCallOutput) pair that is created from source
       // LocalBlkMap should be updated to use target memory
       auto fc_input = I->first;
       auto fc_output = I->second;

@@ -253,10 +253,6 @@ private:
 
   std::vector<unsigned> byval_blks;
   std::vector<bool> escaped_local_blks;
-  // Mapping escaped local blocks in src and tgt
-  // Note that using this makes sense only when it is in tgt
-public:
-  LocalBlkMap local_blk_map;
 
   std::set<smt::expr> undef_vars;
 
@@ -264,6 +260,10 @@ public:
              smt::expr &non_local);
 
 public:
+  // Mapping escaped local blocks in src and tgt
+  // Note that using this makes sense only when it is in tgt
+  LocalBlkMap local_blk_map;
+
   enum BlockKind {
     MALLOC, CXX_NEW, STACK, GLOBAL, CONSTGLOBAL
   };
@@ -276,11 +276,12 @@ public:
     smt::expr non_local_block_liveness;
     smt::expr liveness_var;
     LocalBlkMap local_blk_map;
-
     bool empty = true;
 
   public:
     void setLocalBlkMap(LocalBlkMap &&lbm) { local_blk_map = std::move(lbm); }
+    void setLocalBlkMap(const Memory &m) { local_blk_map = m.local_blk_map; }
+
     // Check whether src's call state(this) implies tgt's call state(st).
     smt::expr implies(const CallState &st,
                       const std::vector<smt::expr> &is_ptrinput_local,
@@ -296,8 +297,6 @@ public:
          << "local_blk_map:\n" << m.local_blk_map << '\n';
       return os;
     }
-
-    void setLocalBlkMap(const Memory &m) { local_blk_map = m.local_blk_map; }
   };
 
   Memory(State &state);
