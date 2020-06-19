@@ -47,6 +47,7 @@ public:
   // Creates a pointer byte that represents i'th byte of p.
   // non_poison should be an one-bit vector or boolean.
   Byte(const Pointer &ptr, unsigned i, const smt::expr &non_poison);
+  Byte(const Pointer &ptr, const smt::expr &i, const smt::expr &non_poison);
 
   // Creates a non-pointer byte that has data and non_poison.
   // data and non_poison should have bits_byte bits.

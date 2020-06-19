@@ -16,9 +16,13 @@ using namespace util;
 
 static unsigned ptr_next_idx = 0;
 
+static bool observes_addresses() {
+  return IR::has_ptr2int || IR::has_int2ptr;
+}
+
 static unsigned zero_bits_offset() {
   assert(is_power2(bits_byte));
-  return ilog2(bits_byte / 8);
+  return observes_addresses() ? 0 : ilog2(bits_byte / 8);
 }
 
 static bool byte_has_ptr_bit() {
@@ -91,10 +95,13 @@ Byte::Byte(const Memory &m, expr &&byterepr) : m(m), p(move(byterepr)) {
 }
 
 Byte::Byte(const Pointer &ptr, unsigned i, const expr &non_poison)
+  : Byte(ptr, expr::mkUInt(i, max(bits_ptr_byte_offset(), 1u)), non_poison) {}
+
+Byte::Byte(const Pointer &ptr, const expr &i, const expr &non_poison)
   : m(ptr.getMemory()) {
   // TODO: support pointers larger than 64 bits.
   assert(bits_program_pointer <= 64 && bits_program_pointer % 8 == 0);
-  assert(i == 0 || bits_ptr_byte_offset() > 0);
+  assert(i.bits() == bits_ptr_byte_offset() || bits_ptr_byte_offset() == 0);
 
   if (!does_ptr_mem_access) {
     p = expr::mkUInt(0, bitsByte());
@@ -107,7 +114,7 @@ Byte::Byte(const Pointer &ptr, unsigned i, const expr &non_poison)
                 expr::mkIf(non_poison, expr::mkUInt(0, 1), expr::mkUInt(1, 1)))
       .concat(ptr());
   if (bits_ptr_byte_offset())
-    p = p.concat(expr::mkUInt(i, bits_ptr_byte_offset()));
+    p = p.concat(i);
   p = p.concat_zeros(padding_ptr_byte());
   assert(!p.isValid() || p.bits() == bitsByte());
 }
@@ -254,26 +261,19 @@ ostream& operator<<(ostream &os, const Byte &byte) {
 static vector<Byte> valueToBytes(const StateValue &val, const Type &fromType,
                                  const Memory &mem, State *s) {
   vector<Byte> bytes;
-  if (fromType.isPtrType()) {
-    Pointer p(mem, val.value);
-    unsigned bytesize = bits_program_pointer / bits_byte;
+  assert(!fromType.isPtrType() &&
+         (!fromType.isAggregateType() || isNonPtrVector(fromType)));
+  StateValue bvval = fromType.toInt(*s, val);
+  unsigned bitsize = bvval.bits();
+  unsigned bytesize = divide_up(bitsize, bits_byte);
 
-    for (unsigned i = 0; i < bytesize; ++i)
-      bytes.emplace_back(p, i, val.non_poison);
-  } else {
-    assert(!fromType.isAggregateType() || isNonPtrVector(fromType));
-    StateValue bvval = fromType.toInt(*s, val);
-    unsigned bitsize = bvval.bits();
-    unsigned bytesize = divide_up(bitsize, bits_byte);
+  bvval = bvval.zext(bytesize * bits_byte - bitsize);
+  unsigned np_mul = does_sub_byte_access ? bits_byte : 1;
 
-    bvval = bvval.zext(bytesize * bits_byte - bitsize);
-    unsigned np_mul = does_sub_byte_access ? bits_byte : 1;
-
-    for (unsigned i = 0; i < bytesize; ++i) {
-      expr data = bvval.value.extract((i + 1) * bits_byte - 1, i * bits_byte);
-      expr np   = bvval.non_poison.extract((i + 1) * np_mul - 1, i * np_mul);
-      bytes.emplace_back(mem, data, np);
-    }
+  for (unsigned i = 0; i < bytesize; ++i) {
+    expr data = bvval.value.extract((i + 1) * bits_byte - 1, i * bits_byte);
+    expr np   = bvval.non_poison.extract((i + 1) * np_mul - 1, i * np_mul);
+    bytes.emplace_back(mem, data, np);
   }
   return bytes;
 }
@@ -330,10 +330,6 @@ static StateValue bytesToValue(const Memory &m, const vector<Byte> &bytes,
     }
     return toType.fromInt(val.trunc(bitsize));
   }
-}
-
-static bool observes_addresses() {
-  return IR::has_ptr2int || IR::has_int2ptr;
 }
 
 static bool ptr_has_local_bit() {
@@ -1478,6 +1474,18 @@ unsigned Memory::getStoreByteSize(const Type &ty) {
   return divide_up(ty.bits(), 8);
 }
 
+// idx in [ptr, ptr+sz)
+static expr ptr_deref_within(const Pointer &idx, const Pointer &ptr,
+                             const expr &size) {
+  expr ret = idx.getShortBid() == ptr.getShortBid();
+  ret &= idx.getOffset().uge(ptr.getOffset());
+
+  if (!size.zextOrTrunc(bits_size_t).uge(ptr.blockSize()).isTrue())
+    ret &= idx.getOffset().ult((ptr + size).getOffset());
+
+  return ret;
+}
+
 void Memory::store(const expr &p, const StateValue &v, const Type &type,
                    unsigned align, const set<expr> &undef_vars0,
                    bool deref_check) {
@@ -1504,6 +1512,18 @@ void Memory::store(const expr &p, const StateValue &v, const Type &type,
       byteofs += getStoreByteSize(child);
     }
     assert(byteofs == getStoreByteSize(type));
+
+  } else if (type.isPtrType()) {
+    Pointer idx(*this, "#idx", ptr.isLocal(), true, false);
+    auto ptrsz = expr::mkUInt(bits_program_pointer / 8, bits_size_t);
+    unsigned pbsz = bits_ptr_byte_offset();
+    Pointer ptr_store(*this, v.value);
+    expr ofs = !pbsz ? expr::mkUInt(0, 1):
+              (idx.getOffset() - ptr.getOffset()).zextOrTrunc(pbsz);
+
+    store_lambda(idx, ptr_deref_within(idx, ptr, ptrsz),
+                 Byte(ptr_store, move(ofs), v.non_poison)(),
+                 local_block_val, non_local_block_val);
 
   } else {
     vector<Byte> bytes = valueToBytes(v, type, *this, state);
@@ -1557,18 +1577,6 @@ Memory::load(const expr &p, const Type &type, unsigned align) {
 
 Byte Memory::load(const Pointer &p) const {
   return { *this, ::load(p, local_block_val, non_local_block_val) };
-}
-
-// idx in [ptr, ptr+sz)
-static expr ptr_deref_within(const Pointer &idx, const Pointer &ptr,
-                             const expr &size) {
-  expr ret = idx.getShortBid() == ptr.getShortBid();
-  ret &= idx.getOffset().uge(ptr.getOffset());
-
-  if (!size.zextOrTrunc(bits_size_t).uge(ptr.blockSize()).isTrue())
-    ret &= idx.getOffset().ult((ptr + size).getOffset());
-
-  return ret;
 }
 
 void Memory::memset(const expr &p, const StateValue &val, const expr &bytesize,
