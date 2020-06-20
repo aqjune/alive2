@@ -832,6 +832,7 @@ expr Pointer::blockValRefined(const Pointer &other) const {
 expr Pointer::blockRefined(const Pointer &other) const {
   expr blk_size = blockSize();
   expr val_refines(true);
+  /*
   uint64_t bytes;
   auto bytes_per_byte = bits_byte / 8;
 
@@ -845,9 +846,9 @@ expr Pointer::blockRefined(const Pointer &other) const {
       Pointer q(other.m, p());
       val_refines &= (ptr_offset == off_expr).implies(p.blockValRefined(q));
     }
-  } else {
-    val_refines = blockValRefined(other);
-  }
+  } else {*/
+  val_refines = blockValRefined(other);
+  //}
 
   assert(isWritable().eq(other.isWritable()));
 
