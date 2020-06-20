@@ -3,9 +3,13 @@
 // Copyright (c) 2018-present The Alive2 Authors.
 // Distributed under the MIT license that can be found in the LICENSE file.
 
+#include <unordered_map>
+
 namespace smt { class expr; }
 
 namespace IR {
+
+class Value;
 
 /// Upperbound of the number of local blocks
 extern unsigned num_locals_src, num_locals_tgt;
@@ -79,6 +83,8 @@ extern bool does_sub_byte_access;
 
 extern unsigned heap_block_alignment;
 
+// bid_nonlocal_max[v]: upperbound of nonlocal bid of v?
+extern std::unordered_map<const Value *, unsigned> bid_nonlocal_max;
 
 bool isUndef(const smt::expr &e);
 bool isTyVar(const smt::expr &ty, const smt::expr &var);

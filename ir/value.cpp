@@ -48,7 +48,8 @@ StateValue UndefValue::toSMT(State &s) const {
   auto val = getType().getDummyValue(true);
   expr var = expr::mkFreshVar("undef", val.value);
   s.addUndefVar(expr(var));
-  return { move(var), move(val.non_poison) };
+  StateValue sv(move(var), move(val.non_poison));
+  return sv;
 }
 
 
@@ -215,10 +216,19 @@ StateValue Input::toSMT(State &s) const {
   expr poison = getType().getDummyValue(false).non_poison;
   expr non_poison = getType().getDummyValue(true).non_poison;
 
-  return { move(val),
+  StateValue sv(move(val),
            config::disable_poison_input || has_deref
              ? move(non_poison)
-             : expr::mkIf(type.extract(1, 1) == 0, non_poison, poison) };
+             : expr::mkIf(type.extract(1, 1) == 0, non_poison, poison));
+
+  if (getType().isPtrType()) {
+    auto I = bid_nonlocal_max.find(this);
+    assert(I != bid_nonlocal_max.end());
+    Pointer p(s.getMemory(), sv.value);
+    s.addPre(sv.non_poison.implies(p.getShortBid().ule(I->second)));
+  }
+
+  return sv;
 }
 
 expr Input::getTyVar() const {

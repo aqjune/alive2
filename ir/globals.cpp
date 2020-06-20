@@ -41,6 +41,7 @@ bool does_ptr_mem_access;
 bool does_ptr_store;
 bool does_sub_byte_access;
 unsigned heap_block_alignment;
+unordered_map<const Value *, unsigned> bid_nonlocal_max;
 
 
 bool isUndef(const expr &e) {

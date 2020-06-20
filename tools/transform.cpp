@@ -525,6 +525,7 @@ static void calculateAndInitConstants(Transform &t) {
 
   num_consts_src = 0;
   num_extra_nonconst_tgt = 0;
+  bid_nonlocal_max.clear();
 
   for (auto GV : globals_src) {
     if (GV->isConst())
@@ -542,8 +543,16 @@ static void calculateAndInitConstants(Transform &t) {
   }
 
   unsigned num_ptrinputs = 0;
+  auto tgt_input_I = t.tgt.getInputs().begin();
   for (auto &arg : t.src.getInputs()) {
-    num_ptrinputs += num_ptrs(arg.getType());
+    unsigned n = num_ptrs(arg.getType());
+    if (n) {
+      const Value &arg_tgt = *tgt_input_I;
+      bid_nonlocal_max[&arg] = num_ptrinputs + num_globals;
+      bid_nonlocal_max[&arg_tgt] = num_ptrinputs + num_globals;
+      num_ptrinputs += n;
+    }
+    ++tgt_input_I;
   }
 
   // The number of instructions that can return a pointer to a non-local block.
@@ -672,7 +681,8 @@ static void calculateAndInitConstants(Transform &t) {
   // in case a different pointer from source is produced.
   auto num_max_nonlocals_inst
     = max(num_nonlocals_inst_src, num_nonlocals_inst_tgt);
-  if (num_nonlocals_inst_src && num_nonlocals_inst_tgt)
+  bool needs_extra_block = num_nonlocals_inst_src && num_nonlocals_inst_tgt;
+  if (needs_extra_block)
     ++num_max_nonlocals_inst;
 
   num_nonlocals_src = num_globals_src + num_ptrinputs + num_max_nonlocals_inst +
@@ -682,6 +692,11 @@ static void calculateAndInitConstants(Transform &t) {
   num_nonlocals_src += has_fncall;
 
   num_nonlocals = num_nonlocals_src + num_globals - num_globals_src;
+
+  for (auto &[v, maxbid]: bid_nonlocal_max) {
+    maxbid += (unsigned)needs_extra_block + (unsigned)has_null_block +
+              (unsigned)has_fncall;
+  }
 
   if (!does_int_mem_access && !does_ptr_mem_access && has_fncall)
     does_int_mem_access = true;
