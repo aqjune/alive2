@@ -117,8 +117,9 @@ template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
           }
 
           for (auto &[rhs_v, rhs_domain] : rhs) {
-            add(lhs_v.concat(rhs_v.subst(from, to).simplify()),
-                c && lhs_domain && rhs_domain);
+            add(lhs_v.concat(rhs_v), c && lhs_domain && rhs_domain);
+            //add(lhs_v.concat(rhs_v.subst(from, to).simplify()),
+            //    c && lhs_domain && rhs_domain);
           }
         }
       }
