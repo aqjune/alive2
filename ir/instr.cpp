@@ -2176,9 +2176,9 @@ StateValue Alloc::toSMT(State &s) const {
   if (mul) {
     auto &[mul_e, mul_np] = s[*mul];
     s.addUB(mul_np);
-    sz = sz.zextOrTrunc(bits_size_t);
-    auto m = mul_e.zextOrTrunc(bits_size_t);
-    s.addUB(sz.mul_no_uoverflow(m));
+    sz = sz.sextOrTrunc(bits_size_t);
+    auto m = mul_e.sextOrTrunc(bits_size_t);
+    s.addUB(sz.mul_no_soverflow(m));
     sz = sz * m;
   }
 
@@ -2245,6 +2245,7 @@ StateValue Malloc::toSMT(State &s) const {
   } else {
     auto &[p, np_ptr] = s.getAndAddUndefs(*ptr);
     s.addUB(np_ptr);
+    s.addUB(np_size);
 
     Pointer ptr(s.getMemory(), p);
     expr p_sz = ptr.blockSize();
