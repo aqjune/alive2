@@ -2116,12 +2116,17 @@ MemInstr::ByteAccessInfo::intOnly(unsigned bytesz) {
 }
 
 MemInstr::ByteAccessInfo
-MemInstr::ByteAccessInfo::get(const Type &t, bool store, unsigned align) {
+MemInstr::ByteAccessInfo::get(const Type &t, const Value *storeval,
+                              unsigned align) {
   ByteAccessInfo info;
   info.hasIntByteAccess = t.enforcePtrOrVectorType().isFalse();
   info.hasPtrByteAccess = hasPtr(t);
-  info.doesPtrStore = info.hasPtrByteAccess && store;
-  info.doesPtrLoad = info.hasPtrByteAccess && !store;
+  info.doesPtrStore = { info.hasPtrByteAccess && storeval, false };
+  if (dynamic_cast<const GlobalVariable *>(storeval) ||
+      dynamic_cast<const NullPointerValue *>(storeval) ||
+      dynamic_cast<const UndefValue *>(storeval))
+    info.doesPtrStore.constant_ptrs_only = true;
+  info.doesPtrLoad = info.hasPtrByteAccess && !storeval;
   info.byteSize = gcd(align, getCommonAccessSize(t));
   info.hasSubByteAccess = hasSubByte(t);
   return info;
@@ -2129,7 +2134,7 @@ MemInstr::ByteAccessInfo::get(const Type &t, bool store, unsigned align) {
 
 MemInstr::ByteAccessInfo
 MemInstr::ByteAccessInfo::full(unsigned byteSize, bool subByte) {
-  return { true, true, true, true, byteSize, subByte };
+  return { true, true, true, { true, true }, byteSize, subByte };
 }
 
 
@@ -2552,7 +2557,7 @@ uint64_t Load::getMaxAccessSize() const {
 }
 
 Load::ByteAccessInfo Load::getByteAccessInfo() const {
-  return ByteAccessInfo::get(getType(), false, align);
+  return ByteAccessInfo::get(getType(), nullptr, align);
 }
 
 vector<Value*> Load::operands() const {
@@ -2594,7 +2599,7 @@ uint64_t Store::getMaxAccessSize() const {
 }
 
 Store::ByteAccessInfo Store::getByteAccessInfo() const {
-  return ByteAccessInfo::get(val->getType(), true, align);
+  return ByteAccessInfo::get(val->getType(), val, align);
 }
 
 vector<Value*> Store::operands() const {

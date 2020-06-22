@@ -38,7 +38,17 @@ bool has_dead_allocas;
 bool has_null_block;
 bool does_int_mem_access;
 bool does_ptr_mem_access;
-bool does_ptr_store;
+
+PtrStoreInfo::operator bool() const {
+  return has_store;
+}
+PtrStoreInfo &PtrStoreInfo::operator|=(const PtrStoreInfo &p) {
+  has_store |= p.has_store;
+  constant_ptrs_only |= p.constant_ptrs_only;
+  return *this;
+}
+PtrStoreInfo does_ptr_store;
+
 bool does_sub_byte_access;
 unsigned heap_block_alignment;
 

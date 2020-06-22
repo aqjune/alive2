@@ -72,7 +72,14 @@ extern bool has_null_block;
 /// Whether the programs do memory accesses that load/store int/ptrs
 extern bool does_int_mem_access;
 extern bool does_ptr_mem_access;
-extern bool does_ptr_store;
+
+struct PtrStoreInfo {
+  bool has_store;
+  bool constant_ptrs_only;
+  operator bool() const;
+  PtrStoreInfo &operator|=(const PtrStoreInfo &ps);
+};
+extern PtrStoreInfo does_ptr_store;
 
 /// Whether the programs do memory accesses of less than bits_byte
 extern bool does_sub_byte_access;

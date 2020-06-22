@@ -564,7 +564,7 @@ static void calculateAndInitConstants(Transform &t) {
   has_free         = false;
   has_fncall       = false;
   has_null_block   = false;
-  does_ptr_store   = false;
+  does_ptr_store   = { false, false };
   does_ptr_mem_access = false;
   does_int_mem_access = false;
 
