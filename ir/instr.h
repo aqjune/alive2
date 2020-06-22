@@ -453,7 +453,7 @@ public:
     // Does this intruction load / store pointers?
     // If hasPtrByteAccess is false, these cannot be true.
     bool doesPtrLoad = false;
-    bool doesPtrStore = false;
+    PtrStoreInfo doesPtrStore = { false, false };
     // The maximum size of a byte that this instruction can support.
     // If zero, this instruction does not read/write bytes.
     // Otherwise, bytes of a memory can be widened to this size.
@@ -464,14 +464,15 @@ public:
     bool doesMemAccess() const { return byteSize; }
 
     static ByteAccessInfo intOnly(unsigned byteSize);
-    static ByteAccessInfo get(const Type &t, bool store, unsigned align);
+    static ByteAccessInfo get(const Type &t, const Value *storeval,
+                              unsigned align);
     static ByteAccessInfo full(unsigned byteSize, bool subByte = false);
   };
 
   virtual ByteAccessInfo getByteAccessInfo() const = 0;
 };
 
- 
+
 class Alloc final : public MemInstr {
   Value *size, *mul;
   unsigned align;
