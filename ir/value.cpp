@@ -207,7 +207,7 @@ StateValue Input::toSMT(State &s) const {
       s.addAxiom(type == 0);
       s.addAxiom(p.isDereferenceable(attrs.getDerefBytes(), bits_byte/8, false));
     }
-    if (has_nonnull && !has_deref) {
+    if (has_nonnull && !has_deref && !util::config::nonnull_poison) {
       s.addAxiom(type.extract(1, 1) == 0);
     }
   }
