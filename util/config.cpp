@@ -21,6 +21,9 @@ bool disable_bitsofs_opt = false;
 bool disable_byte_specialization = false;
 bool disable_memsetcpy_unroll = false;
 bool addresses_observed = false;
+bool andor_freeze = false;
+bool inputmem_simple = false;
+bool nonnull_poison = false;
 
 ostream &dbg() {
   return *debug_os;
