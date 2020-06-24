@@ -51,6 +51,16 @@ llvm::cl::opt<unsigned> opt_max_mem(
   "tv-max-mem", llvm::cl::desc("Alive: max memory (aprox)"),
   llvm::cl::init(1024), llvm::cl::value_desc("MB"));
 
+llvm::cl::opt<bool> opt_andor_freeze(
+  "tv-sema-andor-freeze",
+  llvm::cl::desc("Alive: change semantics of and/or i1 to freeze operands"),
+  llvm::cl::init(false));
+
+llvm::cl::opt<bool> opt_simpleinputmem(
+  "tv-inputmem-simple",
+  llvm::cl::desc("Alive: make the input memory have non-poison integer bytes"),
+  llvm::cl::init(false));
+
 llvm::cl::opt<bool> opt_se_verbose(
   "tv-se-verbose", llvm::cl::desc("Alive: symbolic execution verbose mode"),
   llvm::cl::init(false));
@@ -259,6 +269,8 @@ struct TVPass final : public llvm::FunctionPass {
     config::disable_undef_input = opt_disable_undef_input;
     config::disable_poison_input = opt_disable_poison_input;
     config::debug = opt_debug;
+    config::andor_freeze = opt_andor_freeze;
+    config::inputmem_simple = opt_simpleinputmem;
     llvm_util::omit_array_size = opt_omit_array_size;
 
     llvm_util_init.emplace(*out, module.getDataLayout());

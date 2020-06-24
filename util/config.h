@@ -29,6 +29,11 @@ extern bool addresses_observed;
 
 extern bool disable_memsetcpy_unroll;
 
+extern bool andor_freeze;
+
+extern bool inputmem_simple;
+
+extern bool nonnull_poison;
 
 std::ostream &dbg();
 void set_debug(std::ostream &os);
