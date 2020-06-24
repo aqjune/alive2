@@ -115,6 +115,21 @@ static llvm::cl::opt<string> opt_outputfile("o",
     llvm::cl::init(""), llvm::cl::cat(opt_alive),
     llvm::cl::desc("Specify output filename"));
 
+static llvm::cl::opt<bool> opt_andor_freeze(
+    "sema-andor-freeze",
+    llvm::cl::desc("Alive: change semantics of and/or i1 to freeze operands"),
+    llvm::cl::cat(opt_alive), llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_simpleinputmem(
+    "inputmem-simple",
+    llvm::cl::desc("Alive: make the input memory have non-poison integer bytes"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_nonnullpoison(
+    "nonnull-poison",
+    llvm::cl::desc("Alive: encode nonnull as a poison value"),
+    llvm::cl::init(false));
+
 static llvm::ExitOnError ExitOnErr;
 
 // adapted from llvm-dis.cpp
@@ -404,6 +419,9 @@ convenient way to demonstrate an existing optimizer bug.
   config::disable_undef_input = opt_disable_undef;
   config::disable_poison_input = opt_disable_poison;
   config::debug = opt_debug;
+  config::andor_freeze = opt_andor_freeze;
+  config::inputmem_simple = opt_simpleinputmem;
+  config::nonnull_poison = opt_nonnullpoison;
 
   // optionally, redirect cout and cerr to user-specified file
   if (!opt_outputfile.empty()) {

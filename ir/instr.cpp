@@ -9,6 +9,7 @@
 #include "smt/exprs.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/config.h"
 #include <functional>
 #include <sstream>
 
@@ -430,13 +431,41 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case And:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+      auto aaty = dynamic_cast<const AggregateType *>(&getType());
+      auto &aty = aaty ? aaty->getChild(0) : getType();
+      if (util::config::andor_freeze && aty.bits() == 1) {
+        if (ap.isTrue() && bp.isTrue())
+          return { a & b, true };
+
+        StateValue ret_type = aty.getDummyValue(true);
+        expr nondet_a = expr::mkFreshVar("nondet_a", a),
+            nondet_b = expr::mkFreshVar("nondet_b", a);
+        s.addQuantVar(nondet_a);
+        s.addQuantVar(nondet_b);
+        return { expr::mkIf(ap, a, move(nondet_a)) &
+                expr::mkIf(bp, b, move(nondet_b)), true };
+      }
       return { a & b, true };
     };
     break;
 
   case Or:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+      auto aaty = dynamic_cast<const AggregateType *>(&getType());
+      auto &aty = aaty ? aaty->getChild(0) : getType();
+      if (util::config::andor_freeze && aty.bits() == 1) {
+        if (ap.isTrue() && bp.isTrue())
+          return { a | b, true };
+
+        StateValue ret_type = aty.getDummyValue(true);
+        expr nondet_a = expr::mkFreshVar("nondet_a", a),
+            nondet_b = expr::mkFreshVar("nondet_b", a);
+        s.addQuantVar(nondet_a);
+        s.addQuantVar(nondet_b);
+        return { expr::mkIf(ap, a, move(nondet_a)) |
+                expr::mkIf(bp, b, move(nondet_b)), true };
+      }
       return { a | b, true };
     };
     break;
@@ -570,10 +599,23 @@ StateValue BinOp::toSMT(State &s) const {
       return make_pair(move(sv1), StateValue(move(v2), move(non_poison)));
     };
   } else {
-    scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      auto [v, np] = fn(a, ap, b, bp);
-      return { move(v), ap && bp && np };
-    };
+    switch (op) {
+    case And:
+    case Or:
+      if (util::config::andor_freeze && getType().isIntType() &&
+          getType().bits() == 1) {
+        scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+          auto [v, np] = fn(a, ap, b, bp);
+          return { move(v), move(np) };
+        };
+        break;
+      }
+    default:
+      scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+        auto [v, np] = fn(a, ap, b, bp);
+        return { move(v), ap && bp && np };
+      };
+    }
   }
 
   auto &a = s[*lhs];
@@ -1422,11 +1464,16 @@ static void unpack_inputs(State&s, Type &ty, const ParamAttrs &argflag,
         s.addUB(
           p.isDereferenceable(argflag.getDerefBytes(), bits_byte / 8, false));
       }
+      expr nonpoison = value.non_poison;
       if (argflag.has(ParamAttrs::NonNull)) {
-        s.addUB(value.non_poison);
-        s.addUB(p.isNonZero());
+        if (util::config::nonnull_poison) {
+          nonpoison &= p.isNonZero();
+        } else {
+          s.addUB(value.non_poison);
+          s.addUB(p.isNonZero());
+        }
       }
-      ptr_inputs.emplace_back(StateValue(p.release(), expr(value.non_poison)),
+      ptr_inputs.emplace_back(StateValue(p.release(), expr(nonpoison)),
                               argflag.has(ParamAttrs::ByVal),
                               argflag.has(ParamAttrs::NoCapture));
     } else {
@@ -1462,13 +1509,20 @@ pack_return(State &s, Type &ty, vector<StateValue> &vals, const FnAttrs &attrs,
 
   bool isDeref = attrs.has(FnAttrs::Dereferenceable);
   bool isNonNull = attrs.has(FnAttrs::NonNull);
-  if (ty.isPtrType() && (isDeref || isNonNull)) {
+  if (ty.isPtrType()) {
     Pointer p(s.getMemory(), ret.value);
-    s.addUB(ret.non_poison);
-    if (isDeref)
+    if (isDeref) {
       s.addUB(p.isDereferenceable(attrs.getDerefBytes()));
-    if (isNonNull)
-      s.addUB(p.isNonZero());
+      s.addUB(ret.non_poison);
+    }
+    if (isNonNull) {
+      if (util::config::nonnull_poison) {
+        ret.non_poison &= p.isNonZero();
+      } else {
+        s.addUB(p.isNonZero());
+        s.addUB(ret.non_poison);
+      }
+    }
   }
 
   return ret;

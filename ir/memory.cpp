@@ -7,6 +7,7 @@
 #include "ir/value.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/config.h"
 #include <string>
 
 using namespace IR;
@@ -1034,10 +1035,17 @@ static expr mk_liveness_array() {
 }
 
 static void mk_nonlocal_val_axioms(State &s, Memory &m, expr &val) {
-  if (!does_ptr_mem_access || m.numNonlocals() == 0)
-    return;
-
   auto idx = Pointer(m, "#idx", false, false).shortPtr();
+
+  if (!does_ptr_mem_access || m.numNonlocals() == 0) {
+    if (util::config::inputmem_simple) {
+      Byte byte(m, val.load(idx));
+      s.addAxiom(
+        expr::mkForAll({ idx }, (!byte.isPoison()).implies(!byte.isPtr())));
+    }
+    return;
+  }
+
 #if 0
   expr is_ptr = does_int_mem_access
                   ? expr::mkUF("blk_init_isptr", { idx }, true)
@@ -1063,11 +1071,16 @@ static void mk_nonlocal_val_axioms(State &s, Memory &m, expr &val) {
   Byte byte(m, val.load(idx));
   Pointer loadedptr = byte.ptr();
   expr bid = loadedptr.getShortBid();
-  s.addAxiom(
-    expr::mkForAll({ idx },
-      byte.isPtr().implies(!loadedptr.isLocal() &&
-                            !loadedptr.isNocapture() &&
-                            bid.ule(m.numNonlocals() - 1))));
+  if (util::config::inputmem_simple) {
+    s.addAxiom(
+      expr::mkForAll({ idx }, (!byte.isPoison()).implies(!byte.isPtr())));
+  } else {
+    s.addAxiom(
+      expr::mkForAll({ idx },
+        byte.isPtr().implies(!loadedptr.isLocal() &&
+                              !loadedptr.isNocapture() &&
+                              bid.ule(m.numNonlocals() - 1))));
+  }
 #endif
 }
 

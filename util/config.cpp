@@ -16,6 +16,9 @@ bool io_nobuiltin = false;
 bool disable_poison_input = false;
 bool disable_undef_input = false;
 bool debug = false;
+bool andor_freeze = false;
+bool inputmem_simple = false;
+bool nonnull_poison = false;
 
 ostream &dbg() {
   return *debug_os;
