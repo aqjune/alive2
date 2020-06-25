@@ -408,11 +408,13 @@ unsigned Pointer::totalBitsShort() {
   return bits_shortbid() + bits_for_offset - zero_bits_offset();
 }
 
-expr Pointer::isLocal() const {
-  if (m.numLocals() == 0)
-    return false;
-  if (m.numNonlocals() == 0)
-    return true;
+expr Pointer::isLocal(bool useNumBlocks) const {
+  if (useNumBlocks) {
+    if (m.numLocals() == 0)
+      return false;
+    if (m.numNonlocals() == 0)
+      return true;
+  }
   auto bit = totalBits() - 1;
   return p.extract(bit, bit) == 1;
 }
@@ -1276,7 +1278,7 @@ Memory::mkFnRet(const char *name,
       local.emplace(p.getShortBid() == i);
   }
 
-  state->addAxiom(expr::mkIf(p.isLocal(),
+  state->addAxiom(expr::mkIf(p.isLocal(false),
                              expr::mk_or(local),
                              p.getShortBid().ule(numNonlocals() - 1)));
   return { p.release(), move(var) };
