@@ -115,7 +115,7 @@ public:
   static unsigned totalBits();
   static unsigned totalBitsShort();
 
-  smt::expr isLocal() const;
+  smt::expr isLocal(bool useNumBlocks = true) const;
 
   smt::expr getBid() const;
   smt::expr getShortBid() const; // same as getBid but ignoring is_local bit
