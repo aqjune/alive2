@@ -374,6 +374,7 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
       expr src_bid = m[tgt_mem.getLocalBlkMap().get(p_local_tgt.getShortBid())];
       uint64_t src_bid_const;
       bool is_uint = src_bid.isUInt(src_bid_const);
+      (void)is_uint;
       assert(is_uint);
       Pointer p_local_src(src_mem, src_bid_const, p_local_tgt.getOffset(), true);
 
