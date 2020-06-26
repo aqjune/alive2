@@ -285,7 +285,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
       // LocalBlkMap should be updated to use target memory
       auto fc_input = I->first;
       auto fc_output = I->second;
-      fc_input.m.local_blk_map = memory.local_blk_map;
+      fc_input.m.setLocalBlkMapOf(memory);
       auto lbmap_out = Memory::LocalBlkMap::create(*this, ptr_inputs);
 
       fc_output.callstate.setLocalBlkMap(move(lbmap_out));
@@ -456,7 +456,8 @@ void State::mkAxioms(State &tgt) {
             // p_tgt.isLocal() and p_src.isLocal() should be equivalent.
             // This is enforced by p_src.fninputRefined.
             ptrinputs.emplace_back(
-              make_tuple(p_tgt.isLocal(), p_src.getShortBid(),
+              make_tuple(p_tgt.isLocal() && p_src.isLocal(),
+                         p_src.getShortBid(),
                          p_tgt.getShortBid()));
           }
         }
@@ -466,7 +467,7 @@ void State::mkAxioms(State &tgt) {
 
         if (reads2) {
           auto restrict_ptrs = argmem2 ? &ptr_ins2 : nullptr;
-          expr mem_refined = mem.refined(mem2, true, true, restrict_ptrs).first;
+          expr mem_refined = get<0>(mem.refined(mem2, true, false, restrict_ptrs));
           refines &= mem_refined;
           if (!mem_refined.isConst()) {
             auto &u = mem.getUndefVars();
@@ -500,10 +501,12 @@ void State::mkAxioms(State &tgt) {
                 expr::mkIf(p.isLocal(), local_chk, nonlocal_chk);
           } else
             val_refines = rets[i].value == rets2[i].value;
+
           ref_expr &=
             rets[i].non_poison.implies(rets2[i].non_poison && move(val_refines));
         }
-        expr memstate_implies = mem_state.implies(mem_state2, ptrinputs, mem2);
+        expr memstate_implies =
+            mem_state.implies(mem_state2, ptrinputs, mem, mem2);
         expr pre = refines.implies(ref_expr &&
                                    ub.implies(ub2) &&
                                    move(memstate_implies));
