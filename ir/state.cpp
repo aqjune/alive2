@@ -481,18 +481,18 @@ void State::mkAxioms(State &tgt) {
           expr val_refines;
           if (rets_ty[i]->isPtrType()) {
             Pointer p(mem, rets[i].value), q(mem2, rets2[i].value);
+            auto qbid = q.getShortBid(), pbid = p.getShortBid();
+
             // We can't use Pointer::refined because we don't have post-call
             // memory yet (we can construct it, but it is expensive for vcgen).
             // Let's do what Pointer::refined does using input
             // memory and mem_state only.
-            const auto &lbm = mem_state2.getLocalBlkMap();
-            auto qbid = q.getShortBid(), pbid = p.getShortBid();
-            // If there is no mapping block of qbid: in theory, this case should not
-            // happen, but may happen in practice due to imcompleteness of
-            // mapping. It is incomplete because we don't track mapping of local
-            // blocks escaped by storing to nonlocal blocks.
-            expr local_chk =
-              expr::mkIf(lbm.has(qbid), lbm.get(qbid), qbid) == pbid;
+            expr local_chk(false);
+            if (mem.numLocals() && mem2.numLocals()) {
+              const auto &lbm = mem_state2.getLocalBlkMap();
+              if (lbm.isValid() && !lbm.empty().isTrue())
+                local_chk = lbm.has(qbid).implies(lbm.get(qbid) == pbid);
+            }
             expr nonlocal_chk =
               pbid == qbid && p.isBlockAlive().implies(q.isBlockAlive());
 

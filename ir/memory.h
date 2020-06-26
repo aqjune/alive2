@@ -224,7 +224,8 @@ public:
     LocalBlkMap(bool initialize = false);
     smt::expr has(const smt::expr &local_bid_tgt) const;
     smt::expr get(const smt::expr &local_bid_tgt, bool fullbid = false) const;
-    smt::expr empty() const { return mapped == 0; }
+    smt::expr empty() const;
+    bool isValid() const { return mapped.isValid() && mp.isValid(); }
     void updateIf(const smt::expr &cond, const smt::expr &local_bid_tgt,
                   smt::expr &&local_bid_src);
 

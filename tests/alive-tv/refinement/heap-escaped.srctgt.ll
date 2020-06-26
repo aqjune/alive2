@@ -15,3 +15,5 @@ define void @tgt(i64 %x) {
   store i8* %p, i8** @glb
   ret void
 }
+
+; ERROR: Mismatch in memory

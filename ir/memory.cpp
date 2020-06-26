@@ -1366,6 +1366,10 @@ Memory::LocalBlkMap::get(const smt::expr &short_bid_tgt, bool fullbid) const {
                     fullbid && ptr_has_local_bit());
 }
 
+expr Memory::LocalBlkMap::empty() const {
+  return mapped == 0;
+}
+
 void Memory::LocalBlkMap::updateIf(const smt::expr &cond,
                                    const smt::expr &short_bid_tgt,
                                    smt::expr &&short_bid_src) {
@@ -2035,14 +2039,10 @@ Memory::refined(const Memory &other, bool skip_constants, bool check_heap_only,
 
       if (has_map.isFalse())
         continue;
-      cout << "Mapping between " << bid_tgt << " and " << mapped_src_sbid << "!\n";
-      cout << "\tcond: " << has_map << "\n";
-      cout << "-------\n";
 
       expr e = (has_map && mapped_src_sbid == ptr_local.getShortBid())
                   .implies(ptr_local.blockRefined(q, false));
 
-      cout << "-------\n";
       if (check_heap_only)
         e = q.isHeapAllocated().implies(e);
 
