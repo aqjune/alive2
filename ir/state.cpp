@@ -503,7 +503,7 @@ void State::mkAxioms(State &tgt) {
           ref_expr &=
             rets[i].non_poison.implies(rets2[i].non_poison && move(val_refines));
         }
-        expr memstate_implies = mem_state.implies(mem_state2, ptrinputs);
+        expr memstate_implies = mem_state.implies(mem_state2, ptrinputs, mem2);
         expr pre = refines.implies(ref_expr &&
                                    ub.implies(ub2) &&
                                    move(memstate_implies));
