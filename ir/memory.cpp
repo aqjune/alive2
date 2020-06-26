@@ -1757,7 +1757,7 @@ void Memory::free(const expr &ptr, bool unconstrained) {
 }
 
 void Memory::markAllocasAsDead() {
-  if (numLocals() == 0 || !has_alloca)
+  if (numLocals() == 0 || !has_alloca || !local_block_liveness.isValid())
     return;
 
   unsigned n = numLocals();
@@ -2158,7 +2158,8 @@ bool Memory::operator<(const Memory &rhs) const {
         non_local_block_liveness, local_block_liveness, local_blk_addr,
         local_blk_size, local_blk_align, local_blk_kind,
         non_local_blk_size, non_local_blk_align,
-        non_local_blk_kind, byval_blks, escaped_local_blks, undef_vars) <
+        non_local_blk_kind, byval_blks, escaped_local_blks,
+        stored_localptr_locs, undef_vars) <
     tie(rhs.non_local_block_val, rhs.local_block_val,
         rhs.initial_non_local_block_val,
         rhs.non_local_block_liveness, rhs.local_block_liveness,
@@ -2166,7 +2167,7 @@ bool Memory::operator<(const Memory &rhs) const {
         rhs.local_blk_kind,
         rhs.non_local_blk_size, rhs.non_local_blk_align,
         rhs.non_local_blk_kind, rhs.byval_blks, rhs.escaped_local_blks,
-        rhs.undef_vars);
+        rhs.stored_localptr_locs, rhs.undef_vars);
 }
 
 #define P(name, expr) do {      \
