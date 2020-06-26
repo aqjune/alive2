@@ -217,15 +217,16 @@ public:
     smt::expr mp; // shortbid(tgt) -> shortbid(src)
 
   public:
+    LocalBlkMap(bool initialize = false);
     smt::expr has(const smt::expr &local_bid_tgt) const;
     smt::expr get(const smt::expr &local_bid_tgt) const;
+    smt::expr empty() const { return mapped == 0; }
     void updateIf(const smt::expr &cond, const smt::expr &local_bid_tgt,
                   smt::expr &&local_bid_src);
 
-    static LocalBlkMap empty();
     // Create an instance by getting the LocalBlkMap of memory and applying
     // ptr_inputs_tgt which are pointer arguments given to tgt's function call
-    static LocalBlkMap create(State &s,
+    static LocalBlkMap create(State &s_tgt,
                               const std::vector<PtrInput> &ptr_inputs_tgt);
 
     friend std::ostream &operator<<(std::ostream &os, const LocalBlkMap &m) {
@@ -280,6 +281,8 @@ public:
     smt::expr initial_non_local_block_val;
     smt::expr non_local_block_liveness;
     smt::expr liveness_var;
+    smt::expr local_val;
+    smt::expr local_val_var;
     LocalBlkMap local_blk_map;
     bool empty = true;
 
@@ -291,7 +294,8 @@ public:
     // Check whether src's call state(this) implies tgt's call state(st).
     // ptrinputs: (is local, src's input bids, tgt's input bids)
     smt::expr implies(const CallState &st,
-      const std::vector<std::tuple<smt::expr, smt::expr, smt::expr>> &ptrinputs)
+      const std::vector<std::tuple<smt::expr, smt::expr, smt::expr>> &ptrinputs,
+      const Memory &m_tgt_beforecall)
       const;
     friend class Memory;
 
@@ -300,7 +304,8 @@ public:
          << "block_val_var: " << m.block_val_var << '\n'
          << "non_local_block_liveness: " << m.non_local_block_liveness << '\n'
          << "liveness_var: " << m.liveness_var << '\n'
-         << "local_blk_map:\n" << m.local_blk_map << '\n';
+         << "local_blk_map:\n" << m.local_blk_map << '\n'
+         << "local val: " << m.local_val << '\n';
       return os;
     }
   };
@@ -377,6 +382,7 @@ public:
   // Returns true if a nocapture pointer byte is not in the memory.
   smt::expr checkNocapture() const;
   void escapeLocalPtr(const smt::expr &ptr);
+  smt::expr isEscapedLocal(const smt::expr &short_bid) const;
 
   unsigned numLocals() const;
   unsigned numNonlocals() const;

@@ -134,3 +134,5 @@ attributes #6 = { minsize optsize }
 !9 = !{!"int", !3, i64 0}
 !10 = !{!"_DEC_API", !2, i64 0, !2, i64 8, !2, i64 16, !2, i64 24, !2, i64 32, !2, i64 40, !11, i64 48, !9, i64 60, !9, i64 64, !2, i64 72, !2, i64 80, !9, i64 88, !3, i64 92, !2, i64 96, !3, i64 104, !2, i64 112}
 !11 = !{!"_AAC_DEFAULT_SETTING", !9, i64 0, !9, i64 4, !9, i64 8}
+
+; ERROR: Precondition is false
