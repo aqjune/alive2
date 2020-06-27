@@ -239,9 +239,9 @@ public:
                             const LocalBlkMap &els);
 
     friend std::ostream &operator<<(std::ostream &os, const LocalBlkMap &m) {
-        os << "- mapped: " << m.mapped << '\n'
-           << "- map: " << m.mp;
-        return os;
+      os << "- mapped: " << m.mapped << '\n'
+          << "- map: " << m.mp;
+      return os;
     }
   };
 

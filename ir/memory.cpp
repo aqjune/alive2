@@ -1479,7 +1479,6 @@ Memory::LocalBlkMap::create(State &st_tgt,
       continue;
 
     expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
-    st_tgt.addQuantVar(new_src_bid);
     lbm.updateIf(local && !exists, local_bid_tgt, move(new_src_bid));
   }
 
@@ -1497,7 +1496,6 @@ Memory::LocalBlkMap::create(State &st_tgt,
 
     auto local_bid_tgt = p.getShortBid();
     expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
-    st_tgt.addQuantVar(new_src_bid);
     lbm.updateIf(!b.isPoison() && b.isPtr() && p.isLocal(), local_bid_tgt,
                  move(new_src_bid));
   }
@@ -2218,6 +2216,19 @@ void Memory::print(ostream &os, const Model &m) const {
   if (numLocals()) {
     header("LOCAL BLOCKS:\n");
     print(true, numLocals());
+
+    if (!state->isSource() && !local_blk_map.empty().isTrue()) {
+      os << local_blk_map << "\n";
+      header("TGT2SRC LOCAL BLK MAP:\n");
+      for (unsigned i = 0; i < numLocals(); ++i) {
+        expr has = m[local_blk_map.has(expr::mkUInt(i, bits_shortbid()))];
+        expr get = m[local_blk_map.get(expr::mkUInt(i, bits_shortbid()))];
+        if (has.isTrue())
+          os << "\t" << i << ": mapped to " << get << "\n";
+        else
+          os << "\t" << i << ": mapped to nothing\n";
+      }
+    }
   }
 }
 #undef P
