@@ -285,9 +285,9 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
       // LocalBlkMap should be updated to use target memory
       auto fc_input = I->first;
       auto fc_output = I->second;
-      fc_input.m.setLocalBlkMapOf(memory);
-      auto lbmap_out = Memory::LocalBlkMap::create(*this, ptr_inputs);
+      fc_input.m.setLocalBlkMap(memory.getLocalBlkMap());
 
+      auto lbmap_out = Memory::LocalBlkMap::create(*this, ptr_inputs);
       fc_output.callstate.setLocalBlkMap(move(lbmap_out));
       fc_output.used = true;
 
@@ -491,7 +491,9 @@ void State::mkAxioms(State &tgt) {
             if (mem.numLocals() && mem2.numLocals()) {
               const auto &lbm = mem_state2.getLocalBlkMap();
               if (lbm.isValid() && !lbm.empty().isTrue())
-                local_chk = lbm.has(qbid).implies(lbm.get(qbid) == pbid);
+                // In case of miscompilation, local pointers may not have
+                // mapping at all
+                local_chk = lbm.mappedOrEmpty(qbid, pbid);
             }
             expr nonlocal_chk =
               pbid == qbid && p.isBlockAlive().implies(q.isBlockAlive());

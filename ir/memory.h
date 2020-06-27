@@ -47,13 +47,14 @@ public:
   // Creates a pointer byte that represents i'th byte of p.
   // non_poison should be an one-bit vector or boolean.
   Byte(const Pointer &ptr, unsigned i, const smt::expr &non_poison);
+  Byte(const Pointer &ptr, const smt::expr &ofs, const smt::expr &non_poison);
 
   // Creates a non-pointer byte that has data and non_poison.
   // data and non_poison should have bits_byte bits.
   Byte(const Memory &m, const smt::expr &data, const smt::expr &non_poison);
 
   smt::expr isPtr() const;
-  smt::expr ptrNonpoison() const;
+  smt::expr ptrNonpoison(bool simplify = true) const;
   Pointer ptr() const;
   smt::expr ptrValue() const;
   smt::expr ptrByteoffset() const;
@@ -184,8 +185,9 @@ public:
 
   void stripAttrs();
 
-  // If local_use_mapping is set, don't look into its bytes further
-  smt::expr refined(const Pointer &other, bool local_use_mapping = false) const;
+  // If use_mapping_only is set, use local_blk_map & don't look into its bytes
+  // further
+  smt::expr refined(const Pointer &other, bool use_mapping_only = false) const;
   smt::expr fninputRefined(const Pointer &other, bool is_byval_arg) const;
   // If check_local is false, investigate nonlocal blocks only
   smt::expr blockValRefined(const Pointer &other) const;
@@ -217,7 +219,7 @@ public:
   };
 
   class LocalBlkMap {
-    smt::expr mapped; // BV with 1 bit per tgt bid (bitwidth: num_locals_tgt)
+    smt::expr bv_mapped; // BV with 1 bit per tgt bid (bitwidth: num_locals_tgt)
     smt::expr mp; // shortbid(tgt) -> shortbid(src)
 
   public:
@@ -225,9 +227,16 @@ public:
     smt::expr has(const smt::expr &local_bid_tgt) const;
     smt::expr get(const smt::expr &local_bid_tgt, bool fullbid = false) const;
     smt::expr empty() const;
-    bool isValid() const { return mapped.isValid() && mp.isValid(); }
     void updateIf(const smt::expr &cond, const smt::expr &local_bid_tgt,
                   smt::expr &&local_bid_src);
+    bool isValid() const { return bv_mapped.isValid() && mp.isValid(); }
+
+    smt::expr mapped(const smt::expr &local_bid_tgt,
+                     const smt::expr &local_bid_src) const;
+    smt::expr mappedOrEmpty(const smt::expr &local_bid_tgt,
+                            const smt::expr &local_bid_src) const;
+    Pointer mapPtr(const Pointer &ptr_tgt, const Memory &m_src) const;
+    Byte mapByte(const Byte &byte_tgt, const Memory &m_src) const;
 
     // Create an instance by getting the LocalBlkMap of memory and applying
     // ptr_inputs_tgt which are pointer arguments given to tgt's function call
@@ -239,7 +248,7 @@ public:
                             const LocalBlkMap &els);
 
     friend std::ostream &operator<<(std::ostream &os, const LocalBlkMap &m) {
-      os << "- mapped: " << m.mapped << '\n'
+      os << "- mapped: " << m.bv_mapped << '\n'
           << "- map: " << m.mp;
       return os;
     }
@@ -397,7 +406,7 @@ public:
   smt::expr checkNocapture() const;
   void escapeLocalPtr(const smt::expr &ptr);
   smt::expr isEscapedLocal(const smt::expr &short_bid) const;
-  void setLocalBlkMapOf(const Memory &m);
+  void setLocalBlkMap(const LocalBlkMap &lm);
   const LocalBlkMap &getLocalBlkMap() const;
 
   unsigned numLocals() const;

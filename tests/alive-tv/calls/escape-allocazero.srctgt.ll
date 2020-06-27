@@ -16,4 +16,4 @@ define void @tgt() {
   ret void
 }
 
-; XFAIL: Precondition is always false
+; XFAIL: Source is more defined than target
