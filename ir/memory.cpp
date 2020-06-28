@@ -2319,10 +2319,10 @@ void Memory::print(ostream &os, const Model &m) const {
         Pointer p(*this, i, true);
         expr has = m[local_blk_map.has(expr::mkUInt(i, bits_shortbid()))];
         expr get = m[local_blk_map.get(expr::mkUInt(i, bits_shortbid()))];
+        uint64_t n;
+        ENSURE(p.getBid().isUInt(n));
+        os << "\t" << n << ": mapped to ";
         if (has.isTrue()) {
-          uint64_t n;
-          ENSURE(p.getBid().isUInt(n));
-          os << "\t" << n << ": mapped to ";
           if (get.isUInt(n)) {
             Pointer q(*this, n, true);
             ENSURE(q.getBid().isUInt(n)); // get true bid
