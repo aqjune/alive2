@@ -349,7 +349,7 @@ public:
     mkFnRet(const char *name,
             const std::vector<PtrInput> &ptr_inputs) const;
   CallState mkCallState(const std::vector<PtrInput> &ptr_inputs,
-                        bool argmemonly, bool nofree)
+                        bool argmemonly, bool nofree, bool writes_memory)
       const;
   void setState(const CallState &st);
 

@@ -1622,8 +1622,18 @@ Memory::LocalBlkMap::mkIf(const smt::expr &cond,
 
 Memory::CallState
 Memory::mkCallState(const vector<PtrInput> &ptr_inputs, bool argmemonly,
-                    bool nofree) const {
+                    bool nofree, bool writes_memory) const {
   CallState st;
+  // Escape local blocks that are given to arguments.
+  if (!state->isSource()) {
+    vector<PtrInput> empty_input;
+    st.local_blk_map =
+      LocalBlkMap::create(*state, writes_memory ? ptr_inputs : empty_input);
+  }
+
+  if (!writes_memory)
+    return st;
+
   st.empty = false;
 
   // TODO: handle havoc of local blocks
@@ -1651,11 +1661,6 @@ Memory::mkCallState(const vector<PtrInput> &ptr_inputs, bool argmemonly,
       }
     }
 
-    // Escape local blocks that are given to arguments.
-    if (!state->isSource()) {
-      st.local_blk_map = LocalBlkMap::create(*state, ptr_inputs);
-    }
-
     st.initial_non_local_block_val
       = initial_non_local_block_val.subst(non_local_block_val_var,
                                           st.block_val_var);
@@ -1671,7 +1676,6 @@ Memory::mkCallState(const vector<PtrInput> &ptr_inputs, bool argmemonly,
 
     modifies_local &= isEscapedLocal(p_local.getShortBid());
     if (modifies_local.isFalse()) {
-      // Common case when e.g. there is no local block
       st.local_val = local_block_val;
     } else {
       auto idx_local = p_local.shortPtr();

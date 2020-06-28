@@ -274,10 +274,8 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     string ub_name = name + "#ub";
     I->second
       = { move(values), out_types, expr::mkFreshVar(ub_name.c_str(), false),
-          writes_memory
-            ? memory.mkCallState(I->first.args_ptr, argmemonly,
-                                 attrs.has(FnAttrs::NoFree))
-            : Memory::CallState(),
+          memory.mkCallState(I->first.args_ptr, argmemonly,
+                             attrs.has(FnAttrs::NoFree), writes_memory),
           true };
   } else {
     if (!I->second.used) {
@@ -301,11 +299,17 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
   if (writes_memory) {
     memory.setState(I->second.callstate);
     if (!argmemonly) {
-      // Local pointer-stored locations are now guaranteed to have matched
-      // pointers between src and tgt, thanks to post condition of a function
-      // call
+      // Escaped local pointers are now guaranteed to match between src and tgt,
+      // thanks to post condition of a function call
       memory.clearLocalPtrStoredLocations();
     }
+  } else if (reads_memory && !isSource()) {
+    // Disallow this transformation by updating escaped block map after readonly
+    // call:
+    //   store p, glb  | store p, glb
+    //   f(p) readonly | f(p) readonly
+    //   f(q) readonly | f(p) readonly
+    memory.setLocalBlkMap(I->second.callstate.getLocalBlkMap());
   }
 
   return I->second.retvals;
