@@ -15,5 +15,3 @@ define void @tgt() {
   call void @f([0 x i8]* %p)
   ret void
 }
-
-; XFAIL: Source is more defined than target

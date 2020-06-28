@@ -783,19 +783,24 @@ expr Pointer::encodeLocalPtrRefinement(const Pointer &other,
   Pointer this_ofs = *this + ofs;
   Pointer other_ofs = other + ofs;
 
+  // If other block is mapped to nothing, return true if use_mapping_only is set
   expr blkrefined = use_mapping_only ? true :
                     this_ofs.blockRefined(other_ofs, false);
-  // TODO: Adding this makes escape-allocazero.srctgt.ll raise
-  // precondition is false .. :(
-  //expr alloca_zero = getAllocType() == STACK && blockSize() == 0 &&
-  //                   other.getAllocType() == STACK && other.blockSize() == 0;
+
+  expr alloca_zero = false;
+  if (has_zero_size_alloca)
+    alloca_zero = other.getAllocType() == STACK && other.blockSize() == 0;
 
   return
     other.isLocal() && getOffset() == other.getOffset() &&
     expr::mkIf(
-        local_map.has(tgt_bid),// && !alloca_zero,
-        local_map.get(tgt_bid) == getShortBid(),
-        blkrefined);
+      move(alloca_zero),
+      // LLVM does not preserve mapping between zero sized allocas
+      isLocal() && getAllocType() == STACK && blockSize() == 0,
+      expr::mkIf(
+          local_map.has(tgt_bid),
+          local_map.get(tgt_bid) == getShortBid(),
+          blkrefined));
 }
 
 expr Pointer::encodeByValArgRefinement(const Pointer &other) const {
@@ -826,16 +831,16 @@ expr Pointer::refined(const Pointer &other, bool use_mapping_only) const {
 
 expr Pointer::fninputRefined(const Pointer &other, bool is_byval_arg) const {
   expr local(false);
-  expr byval_cond(false);
+  expr byval(false);
   if (is_byval_arg)
-    byval_cond = encodeByValArgRefinement(other);
+    byval = encodeByValArgRefinement(other);
   else
     local = encodeLocalPtrRefinement(other, false);
 
   return isBlockAlive().implies(
             other.isBlockAlive() &&
             expr::mkIf(isLocal(),
-               expr::mkIf(is_byval_arg, move(byval_cond), move(local)),
+               expr::mkIf(is_byval_arg, move(byval), move(local)),
                *this == other));
 }
 
@@ -1392,6 +1397,36 @@ Memory::LocalBlkMap::mapByte(const Byte &byte_tgt, const Memory &m_src) const {
     expr::mkIf(byte_tgt.isPtr(), b2(), byte_tgt()));
 }
 
+expr Memory::LocalBlkMap::disjointness(const Memory &m_tgt) const {
+  if (!isValid())
+    return expr();
+
+  // Convert to short bid
+  auto to_sbid = [&](unsigned i) {
+    return Pointer(m_tgt, i, true).getShortBid();
+  };
+
+  vector<expr> escaped_bids;
+  for (unsigned i = 0; i < m_tgt.numLocals(); ++i) {
+    expr sbid = to_sbid(i);
+    if (!m_tgt.isEscapedLocal(sbid).isFalse() && !has(sbid).isFalse())
+      escaped_bids.emplace_back(move(sbid));
+  }
+
+  expr disj(true);
+  for (unsigned idx = 0; idx < escaped_bids.size(); ++idx) {
+    expr i = escaped_bids[idx];
+    expr cond = has(i);
+    expr disj_i(true);
+    for (unsigned idx2 = idx + 1; idx2 < escaped_bids.size(); ++idx2) {
+      expr j = escaped_bids[idx2];
+      disj_i &= has(j).implies(get(i) != get(j));
+    }
+    disj &= cond.implies(move(disj_i));
+  }
+  return disj;
+}
+
 expr Memory::LocalBlkMap::empty() const {
   return bv_mapped == 0;
 }
@@ -1459,11 +1494,13 @@ expr Memory::CallState::implies(const CallState &st,
     //   %p = alloca | %q = alloca
     //   f(%p)       | f(%q)        ; map %q to %p
     for (unsigned i = 0; i < ptrinputs.size(); ++i) {
-      auto &is_local = get<0>(ptrinputs[i]);
+      auto &map_cond = get<0>(ptrinputs[i]);
       auto &pi_src = get<1>(ptrinputs[i]);
       auto &pi_tgt = get<2>(ptrinputs[i]);
 
-      ret &= is_local.implies(st.local_blk_map.mapped(pi_tgt, pi_src));
+      if (map_cond.isFalse())
+        continue;
+      ret &= map_cond.implies(st.local_blk_map.mapped(pi_tgt, pi_src));
     }
 
     // Relate local blocks that are escaped to nonlocals
@@ -1530,8 +1567,16 @@ Memory::LocalBlkMap::create(State &st_tgt,
 
     auto local_bid_tgt = argp.getShortBid();
     expr exists = lbm.has(local_bid_tgt);
+
+    expr zero_size_alloca = false;
+    if (has_zero_size_alloca)
+      // LLVM does not preserve mapping between src/tgt's zero sized allocas
+      zero_size_alloca = argp.getAllocType() == Pointer::STACK &&
+                         argp.blockSize() == 0;
+
     expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
-    lbm.updateIf(local && !exists, local_bid_tgt, move(new_src_bid));
+    lbm.updateIf(local && !exists && !zero_size_alloca, local_bid_tgt,
+                 move(new_src_bid));
   }
 
   // Build map using local ptrs stored to nonlocals

@@ -237,6 +237,8 @@ public:
     Pointer mapPtr(const Pointer &ptr_tgt, const Memory &m_src) const;
     Byte mapByte(const Byte &byte_tgt, const Memory &m_src) const;
 
+    smt::expr disjointness(const Memory &m_tgt) const;
+
     const auto &getBidVars() const { return bid_vars; }
 
     // Create an instance by getting the LocalBlkMap of memory and applying

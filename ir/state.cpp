@@ -460,11 +460,17 @@ void State::mkAxioms(State &tgt) {
           // byval implies nocapture (by llvm2alive); no need to check byval
           if (!is_nocapture && !p_tgt.isLocal().isFalse() &&
               !p_src.isLocal().isFalse()) {
-            // p_tgt.isLocal() and p_src.isLocal() should be equivalent.
-            // This is enforced by p_src.fninputRefined.
+            // fninputRefined returns true when src block is freed, so isLocal
+            // should be checked again
+            expr map_cond = p_tgt.isLocal() && p_src.isLocal();
+            if (has_zero_size_alloca) {
+              // LLVM merges zero-sized allocas regardless of whether they are
+              // escaped or not.
+              map_cond &= !(p_tgt.getAllocType() == Pointer::STACK &&
+                            p_tgt.blockSize() == 0);
+            }
             ptrinputs.emplace_back(
-              make_tuple(p_tgt.isLocal() && p_src.isLocal(),
-                         p_src.getShortBid(),
+              make_tuple(move(map_cond), p_src.getShortBid(),
                          p_tgt.getShortBid()));
           }
         }

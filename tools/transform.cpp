@@ -342,10 +342,13 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
     auto &undef = src_mem.getUndefVars();
     qvars.insert(undef.begin(), undef.end());
   }
-  // Quantify variables used for local block mapping
   const Memory::LocalBlkMap &lbm = tgt_mem.getLocalBlkMap();
-  if (lbm.isValid())
+  if (lbm.isValid()) {
+    // Quantify variables used for local block mapping
     qvars.insert(lbm.getBidVars().begin(), lbm.getBidVars().end());
+    // Encode disjointness of mapped blocks
+    pre_src &= lbm.disjointness(tgt_mem);
+  }
 
   if (check_expr(axioms_expr && (pre_src && pre_tgt)).isUnsat()) {
     errs.add("Precondition is always false", false);
@@ -582,6 +585,7 @@ static void calculateAndInitConstants(Transform &t) {
   has_int2ptr      = false;
   has_ptr2int      = false;
   has_alloca       = false;
+  has_zero_size_alloca = false;
   has_dead_allocas = false;
   has_malloc       = false;
   has_free         = false;
@@ -648,6 +652,9 @@ static void calculateAndInitConstants(Transform &t) {
           if (auto alloc = dynamic_cast<const Alloc*>(&i)) {
             has_alloca = true;
             has_dead_allocas |= alloc->initDead();
+            if (auto *ci = dynamic_cast<const IntConst *>(&alloc->getSize())) {
+              has_zero_size_alloca |= ci->getInt() ? *ci->getInt() == 0 : false;
+            }
           }
           else if (auto alloc = dynamic_cast<const Malloc*>(&i)) {
             has_malloc  = true;
