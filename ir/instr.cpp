@@ -2099,6 +2099,8 @@ StateValue Return::toSMT(State &s) const {
   s.addUB(s.getMemory().checkNocapture());
   addUBForNoCaptureRet(s, retval, val->getType());
   s.getMemory().markAllocasAsDead();
+  if (!s.isSource())
+    s.getMemory().setLocalBlkMap(Memory::LocalBlkMap::create(s, {}));
 
   auto &attrs = s.getFn().getFnAttrs();
   bool isDeref = attrs.has(FnAttrs::Dereferenceable);

@@ -119,8 +119,6 @@ public:
 
   smt::expr isLocal(bool useNumBlocks = true) const;
   bool localOrNull() const;
-  // If cond is given, ptr should be if(cond, local, null)
-  bool dropNull(smt::expr* cond = nullptr);
 
   smt::expr getBid() const;
   smt::expr getShortBid() const; // same as getBid but ignoring is_local bit
@@ -221,6 +219,7 @@ public:
   class LocalBlkMap {
     smt::expr bv_mapped; // BV with 1 bit per tgt bid (bitwidth: num_locals_tgt)
     smt::expr mp; // shortbid(tgt) -> shortbid(src)
+    std::set<smt::expr> bid_vars;
 
   public:
     LocalBlkMap(bool initialize = false);
@@ -237,6 +236,8 @@ public:
                             const smt::expr &local_bid_src) const;
     Pointer mapPtr(const Pointer &ptr_tgt, const Memory &m_src) const;
     Byte mapByte(const Byte &byte_tgt, const Memory &m_src) const;
+
+    const auto &getBidVars() const { return bid_vars; }
 
     // Create an instance by getting the LocalBlkMap of memory and applying
     // ptr_inputs_tgt which are pointer arguments given to tgt's function call
@@ -283,7 +284,7 @@ private:
              smt::expr &non_local);
 
   // Non-local locations that stored a escaped local pointer
-  std::set<smt::expr> stored_localptr_locs;
+  std::set<smt::expr> localptr_stored_locs;
 
   // Mapping escaped local blocks in src and tgt
   // Note that using this makes sense only when it is in tgt
@@ -391,15 +392,18 @@ public:
   smt::expr ptr2int(const smt::expr &ptr) const;
   smt::expr int2ptr(const smt::expr &val) const;
 
+  // Returns: (refinement formula, nonlocal ptr, local ptr)
+  // If end_of_fun is true, refinement becomes false if there is no mapping
+  // between src escaped local and tgt escaped local
   std::tuple<smt::expr,Pointer,Pointer>
     refined(const Memory &other,
-            bool skip_constants, bool check_heap_only,
+            bool skip_constants, bool end_of_fun,
             const std::vector<PtrInput> *set_ptrs = nullptr)
       const;
 
   auto& getUndefVars() const { return undef_vars; }
   // Returns a set of nonlocal pointers that stores an escaped local pointers
-  auto& getPtrsHavingEscapedLocals() const { return stored_localptr_locs; }
+  auto& getPtrsHavingEscapedLocals() const { return localptr_stored_locs; }
 
   // Returns true if a nocapture pointer byte is not in the memory.
   smt::expr checkNocapture() const;
@@ -407,6 +411,7 @@ public:
   smt::expr isEscapedLocal(const smt::expr &short_bid) const;
   void setLocalBlkMap(const LocalBlkMap &lm);
   const LocalBlkMap &getLocalBlkMap() const;
+  void clearLocalPtrStoredLocations() { localptr_stored_locs.clear(); }
 
   unsigned numLocals() const;
   unsigned numNonlocals() const;

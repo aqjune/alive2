@@ -439,28 +439,6 @@ bool Pointer::localOrNull() const {
   return isLocal().isTrue() || (*this == mkNullPointer(m)).isTrue();
 }
 
-bool Pointer::dropNull(expr* given_cond) {
-  // If this pointer is ite(cond, ptr, null), leave ptr only
-  if (!has_null_block)
-    return false;
-
-  expr cond, then, els;
-  if (!p.isIf(cond, then, els))
-    return false;
-  if (!(els == mkNullPointer(m)()).isTrue())
-    return false;
-
-  if (given_cond) {
-    if (!given_cond->eq(cond))
-      return false;
-    else
-      *given_cond = cond;
-  }
-
-  p = then;
-  return true;
-}
-
 expr Pointer::getBid() const {
   return p.extract(totalBits() - 1, bits_for_offset + bits_for_ptrattrs);
 }
@@ -1492,8 +1470,8 @@ expr Memory::CallState::implies(const CallState &st,
     //   %p = alloca    | %q = alloca
     //   store %p, @glb | store %q, @glb
     //   f()            | f()             ; map %q to %p
-    for (auto &escaped_loc : m_tgt_beforecall.stored_localptr_locs) {
-      if (!m_src_beforecall.stored_localptr_locs.count(escaped_loc))
+    for (auto &escaped_loc : m_tgt_beforecall.localptr_stored_locs) {
+      if (!m_src_beforecall.localptr_stored_locs.count(escaped_loc))
         continue;
 
       Pointer p_tgt(m_tgt_beforecall, escaped_loc);
@@ -1542,6 +1520,7 @@ Memory::LocalBlkMap::create(State &st_tgt,
   Memory &m = st_tgt.getMemory();
   LocalBlkMap lbm = m.local_blk_map;
 
+  // Build map using fninputs
   for (auto &[arg, is_byval_arg, is_nocapture_arg] : ptr_inputs_tgt) {
     if (is_byval_arg || is_nocapture_arg) continue;
     Pointer argp(st_tgt.getMemory(), arg.value);
@@ -1551,17 +1530,15 @@ Memory::LocalBlkMap::create(State &st_tgt,
 
     auto local_bid_tgt = argp.getShortBid();
     expr exists = lbm.has(local_bid_tgt);
-
-    if (exists.isTrue())
-      continue;
-
     expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
     lbm.updateIf(local && !exists, local_bid_tgt, move(new_src_bid));
   }
 
-  for (auto &loc_tgt : m.stored_localptr_locs) {
+  // Build map using local ptrs stored to nonlocals
+  lbm.bid_vars.clear();
+
+  for (auto &loc_tgt : m.localptr_stored_locs) {
     Pointer loc(m, loc_tgt);
-    assert(loc.isLocal().isFalse());
 
     Byte b = m.load(loc);
     if (b.isPoison().isTrue() || b.isPtr().isFalse())
@@ -1572,9 +1549,15 @@ Memory::LocalBlkMap::create(State &st_tgt,
       continue;
 
     auto local_bid_tgt = p.getShortBid();
+    expr exists = lbm.has(local_bid_tgt);
+    if (exists.isTrue() || p.isLocal().eq(exists))
+      // Should already exist in the map
+      continue;
+
     expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
-    lbm.updateIf(!b.isPoison() && b.isPtr() && p.isLocal(), local_bid_tgt,
-                 move(new_src_bid));
+    lbm.bid_vars.insert(new_src_bid);
+    lbm.updateIf(!b.isPoison() && b.isPtr() && p.isLocal() && !exists,
+                local_bid_tgt, move(new_src_bid));
   }
 
   return lbm;
@@ -1586,7 +1569,9 @@ Memory::LocalBlkMap::mkIf(const smt::expr &cond,
                           const Memory::LocalBlkMap &els) {
   LocalBlkMap m;
   m.bv_mapped = expr::mkIf(cond, then.bv_mapped, els.bv_mapped);
-  m.mp = expr::mkIf(cond, then.mp, els.mp);
+  m.mp        = expr::mkIf(cond, then.mp, els.mp);
+  m.bid_vars = then.bid_vars;
+  m.bid_vars.insert(els.bid_vars.begin(), els.bid_vars.end());
   return m;
 }
 
@@ -1901,7 +1886,7 @@ void Memory::store(const expr &p, const StateValue &v, const Type &type,
     if (type.isPtrType() && ptr.isLocal().isFalse()) {
       Pointer ptr_val(*this, v.value);
       if (ptr_val.localOrNull())
-        stored_localptr_locs.emplace(ptr());
+        localptr_stored_locs.emplace(ptr());
     }
     vector<Byte> bytes = valueToBytes(v, type, *this, state);
     assert(!v.isValid() || bytes.size() * bytesz == getStoreByteSize(type));
@@ -2041,7 +2026,7 @@ expr Memory::int2ptr(const expr &val) const {
 }
 
 tuple<expr,Pointer,Pointer>
-Memory::refined(const Memory &other, bool skip_constants, bool check_heap_only,
+Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
                 const vector<PtrInput> *set_ptrs) const {
   bool localblk_map_empty = true;
   if (!other.state->isSource()) { // can happen when called from State::mkAxiom()
@@ -2049,7 +2034,7 @@ Memory::refined(const Memory &other, bool skip_constants, bool check_heap_only,
     localblk_map_empty = !lbmap.isValid() || !lbmap.empty().isTrue();
   }
 
-  if (num_nonlocals <= has_null_block && other.stored_localptr_locs.empty() &&
+  if (num_nonlocals <= has_null_block && other.localptr_stored_locs.empty() &&
       localblk_map_empty)
     return { true, Pointer(*this, expr()), Pointer(*this, expr()) };
 
@@ -2072,20 +2057,22 @@ Memory::refined(const Memory &other, bool skip_constants, bool check_heap_only,
     }
   }
 
-  {
+  if (!end_of_fun || has_malloc) {
     // Relate local blocks that are escaped to memory
     //   %p = malloc    | %q = malloc
     //   store %p, @glb | store %q, @glb
-    for (auto &escaped_loc : other.stored_localptr_locs) {
+    for (auto &escaped_loc : other.localptr_stored_locs) {
       // Try to deal with simple cases only
       // The stored location (@glb) should exist in src as well
-      if (!stored_localptr_locs.count(escaped_loc))
+      if (!localptr_stored_locs.count(escaped_loc))
         continue;
 
       Pointer p_tgt(other, escaped_loc);
       Pointer p_src(*this, escaped_loc);
       expr precond = p_tgt.isDereferenceable(bits_program_pointer / 8)() &&
                      p_src.isDereferenceable(bits_program_pointer / 8)();
+
+      // Simplification: only check one byte
       Byte b_tgt = other.load(p_tgt);
       Byte b_src = load(p_src);
       if (b_tgt.isPoison().isTrue() || b_tgt.isPtr().isFalse() ||
@@ -2098,32 +2085,28 @@ Memory::refined(const Memory &other, bool skip_constants, bool check_heap_only,
       if (!loaded_p_tgt.localOrNull() || !loaded_p_src.localOrNull())
         continue;
 
-      // Both should be known to be ite(cond, block, null) with same cond or
-      // has no ite
-      expr *cond = nullptr;
-      if (loaded_p_tgt.dropNull(cond)) {
-        if (!loaded_p_src.dropNull(cond))
-          // tgt is malloc() whereas we know nothing about src.
-          continue;
-      } else {
-        assert(cond == nullptr);
-        if (loaded_p_src.dropNull(cond))
-          // src is malloc() whereas we know nothing about tgt.
-          continue;
+      expr refined;
+      if (!end_of_fun)
+        // CallState::implies() will make a guarantee for correct block mapping.
+        refined = other.local_blk_map.mappedOrEmpty(loaded_p_tgt.getShortBid(),
+                                                    loaded_p_src.getShortBid());
+      else {
+        refined = other.local_blk_map.mapped(loaded_p_tgt.getShortBid(),
+                                             loaded_p_src.getShortBid());
       }
-
-      expr refined = loaded_p_src.refined(loaded_p_tgt, false);
-      if (check_heap_only)
-        refined = loaded_p_src.isHeapAllocated().implies(refined);
       precond &= b_tgt.isPtr() && b_tgt.ptrNonpoison() && b_src.isPtr() &&
-                 b_src.ptrNonpoison();
-      ret &= move(precond.implies(refined));
+                 b_src.ptrNonpoison() && loaded_p_src.isLocal() &&
+                 loaded_p_tgt.isLocal();
+      if (end_of_fun)
+        precond &= loaded_p_src.isHeapAllocated() &&
+                   loaded_p_tgt.isHeapAllocated();
+      ret &= precond.implies(refined);
     }
   }
 
   Pointer ptr_local(*this, "#idx_local_refinement", true);
   if (!other.local_blk_map.empty().isTrue()) {
-    // Check escaped local pointers using mapping
+    // Check refinement between mapped local blocks
     for (unsigned bid_tgt = 0; bid_tgt < num_locals_tgt; ++bid_tgt) {
       if (!other.escaped_local_blks[bid_tgt])
         continue;
@@ -2138,7 +2121,7 @@ Memory::refined(const Memory &other, bool skip_constants, bool check_heap_only,
         continue;
 
       expr e = mapped.implies(ptr_local.blockRefined(q, false));
-      if (check_heap_only)
+      if (end_of_fun)
         e = q.isHeapAllocated().implies(e);
 
       ret &= move(e);
@@ -2235,8 +2218,8 @@ Memory Memory::mkIf(const expr &cond, const Memory &then, const Memory &els) {
     if (els.escaped_local_blks[i])
       ret.escaped_local_blks[i] = true;
   }
-  ret.stored_localptr_locs.insert(els.stored_localptr_locs.begin(),
-                                  els.stored_localptr_locs.end());
+  ret.localptr_stored_locs.insert(els.localptr_stored_locs.begin(),
+                                  els.localptr_stored_locs.end());
   ret.undef_vars.insert(els.undef_vars.begin(), els.undef_vars.end());
   return ret;
 }
@@ -2253,7 +2236,7 @@ bool Memory::operator<(const Memory &rhs) const {
         local_blk_size, local_blk_align, local_blk_kind,
         non_local_blk_size, non_local_blk_align,
         non_local_blk_kind, byval_blks, escaped_local_blks,
-        stored_localptr_locs, undef_vars) <
+        localptr_stored_locs, undef_vars) <
     tie(rhs.non_local_block_val, rhs.local_block_val,
         rhs.initial_non_local_block_val,
         rhs.non_local_block_liveness, rhs.local_block_liveness,
@@ -2261,7 +2244,7 @@ bool Memory::operator<(const Memory &rhs) const {
         rhs.local_blk_kind,
         rhs.non_local_blk_size, rhs.non_local_blk_align,
         rhs.non_local_blk_kind, rhs.byval_blks, rhs.escaped_local_blks,
-        rhs.stored_localptr_locs, rhs.undef_vars);
+        rhs.localptr_stored_locs, rhs.undef_vars);
 }
 
 #define P(name, expr) do {      \
@@ -2323,13 +2306,7 @@ void Memory::print(ostream &os, const Model &m) const {
         ENSURE(p.getBid().isUInt(n));
         os << "\t" << n << ": mapped to ";
         if (has.isTrue()) {
-          if (get.isUInt(n)) {
-            Pointer q(*this, n, true);
-            ENSURE(q.getBid().isUInt(n)); // get true bid
-            os << n << "\n";
-          } else {
-            os << get << "\n";
-          }
+          os << get << "\n";
         } else
           os << "nothing\n";
       }

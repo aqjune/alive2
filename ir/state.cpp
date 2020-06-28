@@ -298,8 +298,15 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
 
   addUB(I->second.ub);
 
-  if (writes_memory)
+  if (writes_memory) {
     memory.setState(I->second.callstate);
+    if (!argmemonly) {
+      // Local pointer-stored locations are now guaranteed to have matched
+      // pointers between src and tgt, thanks to post condition of a function
+      // call
+      memory.clearLocalPtrStoredLocations();
+    }
+  }
 
   return I->second.retvals;
 }
@@ -484,7 +491,8 @@ void State::mkAxioms(State &tgt) {
             auto qbid = q.getShortBid(), pbid = p.getShortBid();
 
             // We can't use Pointer::refined because we don't have post-call
-            // memory yet (we can construct it, but it is expensive for vcgen).
+            // memory yet (we can construct post-call memory, but it is
+            // expensive for vcgen).
             // Let's do what Pointer::refined does using input
             // memory and mem_state only.
             expr local_chk(false);
@@ -495,12 +503,13 @@ void State::mkAxioms(State &tgt) {
                 // mapping at all
                 local_chk = lbm.mappedOrEmpty(qbid, pbid);
             }
-            expr nonlocal_chk =
-              pbid == qbid && p.isBlockAlive().implies(q.isBlockAlive());
+            expr nonlocal_chk = pbid == qbid;
 
-            val_refines = p.isLocal() == q.isLocal() &&
+            val_refines = p.isBlockAlive().implies(
+                q.isBlockAlive() &&
+                p.isLocal() == q.isLocal() &&
                 p.getOffset() == q.getOffset() &&
-                expr::mkIf(p.isLocal(), local_chk, nonlocal_chk);
+                expr::mkIf(p.isLocal(), local_chk, nonlocal_chk));
           } else
             val_refines = rets[i].value == rets2[i].value;
 

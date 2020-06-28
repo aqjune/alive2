@@ -342,6 +342,10 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
     auto &undef = src_mem.getUndefVars();
     qvars.insert(undef.begin(), undef.end());
   }
+  // Quantify variables used for local block mapping
+  const Memory::LocalBlkMap &lbm = tgt_mem.getLocalBlkMap();
+  if (lbm.isValid())
+    qvars.insert(lbm.getBidVars().begin(), lbm.getBidVars().end());
 
   if (check_expr(axioms_expr && (pre_src && pre_tgt)).isUnsat()) {
     errs.add("Precondition is always false", false);
@@ -376,11 +380,13 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
       bool is_uint = src_bid.isUInt(src_bid_const);
       (void)is_uint;
       assert(is_uint);
-      Pointer p_local_src(src_mem, src_bid_const, p_local_tgt.getOffset(), true);
+      if (src_bid_const < src_mem.numLocals()) {
+        Pointer p_local_src(src_mem, src_bid_const, p_local_tgt.getOffset(), true);
 
-      s << "\n  Local area: src: " << p_local_src << ", tgt: " << p_local_tgt
-        << "\nSource value: " << Byte(src_mem, m[src_mem.load(p_local_src)()])
-        << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p_local_tgt)()]);
+        s << "\n  Local area: tgt: " << p_local_tgt
+          << "\nSource value: " << Byte(src_mem, m[src_mem.load(p_local_src)()])
+          << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p_local_tgt)()]);
+      }
     }
   };
 
