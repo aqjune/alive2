@@ -64,6 +64,8 @@ known_call(llvm::CallInst &i, const llvm::TargetLibraryInfo &TLI,
     case llvm::LibFunc_perror:
     case llvm::LibFunc_read:
     case llvm::LibFunc_write:
+    case llvm::LibFunc_fflush:
+    case llvm::LibFunc_ungetc:
       RETURN_FAIL_UNKNOWN();
     default:
       break;

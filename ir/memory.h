@@ -240,7 +240,6 @@ public:
 
     // Create an instance by getting the LocalBlkMap of memory and applying
     // ptr_inputs_tgt which are pointer arguments given to tgt's function call
-    // as well as escaped_locs_tgt which is a list of (loc, stored byte)
     static LocalBlkMap create(State &s_tgt,
         const std::vector<PtrInput> &ptr_inputs_tgt);
 

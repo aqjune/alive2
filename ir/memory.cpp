@@ -1421,6 +1421,11 @@ expr Memory::LocalBlkMap::empty() const {
 void Memory::LocalBlkMap::updateIf(const smt::expr &cond,
                                    const smt::expr &short_bid_tgt,
                                    smt::expr &&short_bid_src) {
+  if (!cond.isValid() || !short_bid_tgt.isValid() || !short_bid_src.isValid()) {
+    bv_mapped = expr();
+    mp = expr();
+    return;
+  }
   bv_mapped = bv_mapped | (cond.toBVBool().zextOrTrunc(num_locals_tgt)
                           << short_bid_tgt.zextOrTrunc(num_locals_tgt));
   auto bid = expr::mkVar("bid", short_bid_tgt.bits());
@@ -1457,7 +1462,7 @@ expr Memory::CallState::implies(const CallState &st,
   // TODO: benchmark using quantifiers to state implication
   expr ret(true);
   if (block_val_var.isValid() && st.block_val_var.isValid()) {
-    if (does_ptr_store) {
+    if (m_tgt_beforecall.numLocals() && m_src_beforecall.numLocals()) {
       Pointer p_tgt(m_tgt_beforecall, "implies_ptr", false);
       Pointer p_src(m_src_beforecall, p_tgt());
       expr e = expr::mkForAll({ p_tgt.shortPtr() },
@@ -1634,13 +1639,19 @@ Memory::mkCallState(const vector<PtrInput> &ptr_inputs, bool argmemonly,
                                     non_local_block_val.load(idx)));
     }
 
-    auto idx_local = p_local.shortPtr();
-    st.local_val
-      = expr::mkLambda(
-          { idx_local },
-          expr::mkIf(modifies_local && isEscapedLocal(p_local.getShortBid()),
-                    st.local_val_var.load(idx_local),
-                    local_block_val.load(idx_local)));
+    modifies_local &= isEscapedLocal(p_local.getShortBid());
+    if (modifies_local.isFalse()) {
+      // Common case when e.g. there is no local block
+      st.local_val = local_block_val;
+    } else {
+      auto idx_local = p_local.shortPtr();
+      st.local_val
+        = expr::mkLambda(
+            { idx_local },
+            expr::mkIf(move(modifies_local),
+                       st.local_val_var.load(idx_local),
+                       local_block_val.load(idx_local)));
+    }
   }
 
   if (num_nonlocals_src && !nofree) {
