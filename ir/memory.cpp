@@ -62,6 +62,10 @@ static string local_name(const State *s, const char *name) {
   return string(name) + (s->isSource() ? "_src" : "_tgt");
 }
 
+static bool approximate_localblkmap() {
+  return has_fncall;
+}
+
 static expr load_bv(const expr &var, const expr &idx0) {
   auto bw = var.bits();
   if (!bw)
@@ -783,8 +787,9 @@ expr Pointer::encodeLocalPtrRefinement(const Pointer &other,
   Pointer this_ofs = *this + ofs;
   Pointer other_ofs = other + ofs;
 
-  // If other block is mapped to nothing, return true if use_mapping_only is set
-  expr blkrefined = use_mapping_only ? true :
+  // If other block is mapped to nothing, follow whether approximated encoding
+  // is used
+  expr blkrefined = use_mapping_only ? approximate_localblkmap() :
                     this_ofs.blockRefined(other_ofs, false);
 
   expr alloca_zero = false;
@@ -1406,7 +1411,10 @@ expr Memory::LocalBlkMap::disjointness(const Memory &m_tgt) const {
   vector<expr> escaped_bids;
   for (unsigned i = 0; i < m_tgt.numLocals(); ++i) {
     expr sbid = to_sbid(i);
-    if (!m_tgt.isEscapedLocal(sbid).isFalse() && !has(sbid).isFalse())
+    bool cond = !has(sbid).isFalse();
+    if (approximate_localblkmap())
+      cond &= !m_tgt.isEscapedLocal(sbid).isFalse();
+    if (cond)
       escaped_bids.emplace_back(move(sbid));
   }
 
@@ -1576,30 +1584,44 @@ Memory::LocalBlkMap::create(State &st_tgt,
                  move(new_src_bid));
   }
 
-  // Build map using local ptrs stored to nonlocals
   lbm.bid_vars.clear();
 
-  for (auto &loc_tgt : m.localptr_stored_locs) {
-    Pointer loc(m, loc_tgt);
+  if (approximate_localblkmap()) {
+    // We should approximate the mapping
+    // Build map using local ptrs stored to nonlocals
+    for (auto &loc_tgt : m.localptr_stored_locs) {
+      Pointer loc(m, loc_tgt);
 
-    Byte b = m.load(loc);
-    if (b.isPoison().isTrue() || b.isPtr().isFalse())
-      continue;
+      Byte b = m.load(loc);
+      if (b.isPoison().isTrue() || b.isPtr().isFalse())
+        continue;
 
-    Pointer p(m, b.ptrValue());
-    if (p.isLocal().isFalse())
-      continue;
+      Pointer p(m, b.ptrValue());
+      if (p.isLocal().isFalse())
+        continue;
 
-    auto local_bid_tgt = p.getShortBid();
-    expr exists = lbm.has(local_bid_tgt);
-    if (exists.isTrue() || p.isLocal().eq(exists))
-      // Should already exist in the map
-      continue;
+      auto local_bid_tgt = p.getShortBid();
+      expr exists = lbm.has(local_bid_tgt);
+      if (exists.isTrue() || p.isLocal().eq(exists))
+        // Should already exist in the map
+        continue;
 
-    expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
-    lbm.bid_vars.insert(new_src_bid);
-    lbm.updateIf(!b.isPoison() && b.isPtr() && p.isLocal() && !exists,
-                local_bid_tgt, move(new_src_bid));
+      expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
+      lbm.bid_vars.insert(new_src_bid);
+      lbm.updateIf(!b.isPoison() && b.isPtr() && p.isLocal() && !exists,
+                  local_bid_tgt, move(new_src_bid));
+    }
+  } else {
+    // We can exactly encode the mapping.
+    // LocalBlkMap should be empty
+    assert(m.numLocals() == 0 || lbm.empty().isTrue());
+    for (unsigned i = 0; i < m.numLocals(); ++i) {
+      Pointer p(m, i, true);
+      auto local_bid_tgt = p.getShortBid();
+      expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
+      lbm.bid_vars.insert(new_src_bid);
+      lbm.updateIf(true, local_bid_tgt, move(new_src_bid));
+    }
   }
 
   return lbm;
@@ -2080,9 +2102,10 @@ tuple<expr,Pointer,Pointer>
 Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
                 const vector<PtrInput> *set_ptrs) const {
   bool localblk_map_empty = true;
+
   if (!other.state->isSource()) { // can happen when called from State::mkAxiom()
     const LocalBlkMap lbmap = other.getLocalBlkMap();
-    localblk_map_empty = !lbmap.isValid() || !lbmap.empty().isTrue();
+    localblk_map_empty = !lbmap.isValid() || lbmap.empty().isTrue();
   }
 
   if (num_nonlocals <= has_null_block && other.localptr_stored_locs.empty() &&
@@ -2109,49 +2132,51 @@ Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
   }
 
   if (!end_of_fun || has_malloc) {
-    // Relate local blocks that are escaped to memory
-    //   %p = malloc    | %q = malloc
-    //   store %p, @glb | store %q, @glb
-    for (auto &escaped_loc : other.localptr_stored_locs) {
-      // Try to deal with simple cases only
-      // The stored location (@glb) should exist in src as well
-      if (!localptr_stored_locs.count(escaped_loc))
-        continue;
+    if (approximate_localblkmap()) {
+      // Relate local blocks that are escaped to nonlocal memory only
+      //   %p = malloc    | %q = malloc
+      //   store %p, @glb | store %q, @glb
+      for (auto &escaped_loc : other.localptr_stored_locs) {
+        // Try to deal with simple cases only
+        // The stored location (@glb) should exist in src as well
+        if (!localptr_stored_locs.count(escaped_loc))
+          continue;
 
-      Pointer p_tgt(other, escaped_loc);
-      Pointer p_src(*this, escaped_loc);
-      expr precond = p_tgt.isDereferenceable(bits_program_pointer / 8)() &&
-                     p_src.isDereferenceable(bits_program_pointer / 8)();
+        Pointer p_tgt(other, escaped_loc);
+        Pointer p_src(*this, escaped_loc);
+        expr precond = p_tgt.isDereferenceable(bits_program_pointer / 8)() &&
+                      p_src.isDereferenceable(bits_program_pointer / 8)();
 
-      // Simplification: only check one byte
-      Byte b_tgt = other.load(p_tgt);
-      Byte b_src = load(p_src);
-      if (b_tgt.isPoison().isTrue() || b_tgt.isPtr().isFalse() ||
-          b_src.isPoison().isTrue() || b_src.isPtr().isFalse())
-        continue;
+        // Simplification: only check one byte
+        Byte b_tgt = other.load(p_tgt);
+        Byte b_src = load(p_src);
+        if (b_tgt.isPoison().isTrue() || b_tgt.isPtr().isFalse() ||
+            b_src.isPoison().isTrue() || b_src.isPtr().isFalse())
+          continue;
 
-      Pointer loaded_p_tgt(other, b_tgt.ptrValue());
-      Pointer loaded_p_src(*this, b_src.ptrValue());
-      // Both should be known to be local or null
-      if (!loaded_p_tgt.localOrNull() || !loaded_p_src.localOrNull())
-        continue;
+        Pointer loaded_p_tgt(other, b_tgt.ptrValue());
+        Pointer loaded_p_src(*this, b_src.ptrValue());
+        // Both should be known to be local or null
+        //if (!loaded_p_tgt.localOrNull() || !loaded_p_src.localOrNull())
+        //  continue;
 
-      expr refined;
-      if (!end_of_fun)
-        // CallState::implies() will make a guarantee for correct block mapping.
-        refined = other.local_blk_map.mappedOrEmpty(loaded_p_tgt.getShortBid(),
-                                                    loaded_p_src.getShortBid());
-      else {
-        refined = other.local_blk_map.mapped(loaded_p_tgt.getShortBid(),
-                                             loaded_p_src.getShortBid());
+        expr refined;
+        if (!end_of_fun)
+          // CallState::implies() will make a guarantee for correct block mapping.
+          refined = other.local_blk_map.mappedOrEmpty(loaded_p_tgt.getShortBid(),
+                                                      loaded_p_src.getShortBid());
+        else {
+          refined = other.local_blk_map.mapped(loaded_p_tgt.getShortBid(),
+                                              loaded_p_src.getShortBid());
+        }
+        precond &= b_tgt.isPtr() && b_tgt.ptrNonpoison() && b_src.isPtr() &&
+                  b_src.ptrNonpoison() && loaded_p_src.isLocal() &&
+                  loaded_p_tgt.isLocal();
+        if (end_of_fun)
+          precond &= loaded_p_src.isHeapAllocated() &&
+                    loaded_p_tgt.isHeapAllocated();
+        ret &= precond.implies(refined);
       }
-      precond &= b_tgt.isPtr() && b_tgt.ptrNonpoison() && b_src.isPtr() &&
-                 b_src.ptrNonpoison() && loaded_p_src.isLocal() &&
-                 loaded_p_tgt.isLocal();
-      if (end_of_fun)
-        precond &= loaded_p_src.isHeapAllocated() &&
-                   loaded_p_tgt.isHeapAllocated();
-      ret &= precond.implies(refined);
     }
   }
 
@@ -2159,7 +2184,9 @@ Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
   if (!other.local_blk_map.empty().isTrue()) {
     // Check refinement between mapped local blocks
     for (unsigned bid_tgt = 0; bid_tgt < num_locals_tgt; ++bid_tgt) {
-      if (!other.escaped_local_blks[bid_tgt])
+      if (approximate_localblkmap() && !other.escaped_local_blks[bid_tgt])
+        // If there are function calls, mapping isn't exactly created; ignore
+        // this block if known to never escape
         continue;
 
       expr sbid_tgt = expr::mkUInt(bid_tgt, bits_shortbid());

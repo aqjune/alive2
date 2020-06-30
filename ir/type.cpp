@@ -649,8 +649,9 @@ PtrType::refines(State &src_s, State &tgt_s, const StateValue &src,
   Pointer p(sm, src.value);
   Pointer q(tm, tgt.value);
 
+  // If there is no function call, exact mapping can be used
   return { src.non_poison.implies(tgt.non_poison),
-           (src.non_poison && tgt.non_poison).implies(p.refined(q)) };
+           (src.non_poison && tgt.non_poison).implies(p.refined(q, !has_fncall)) };
 }
 
 expr PtrType::mkInput(State &s, const char *name,
