@@ -374,14 +374,16 @@ static expr attr_to_bitvec(const ParamAttrs &attrs) {
 namespace IR {
 
 Pointer::Pointer(const Memory &m, const char *var_name, const expr &local,
-                 bool unique_name, bool align, const expr &attr) : m(m) {
+                 bool unique_name, bool align, const expr &attr,
+                 const set<expr> &fn_vars) : m(m) {
   string name = var_name;
   if (unique_name)
     name += '!' + to_string(ptr_next_idx++);
 
-  unsigned bits = totalBitsShort() + !align * zero_bits_offset();
+  auto ty = expr::mkUInt(0, totalBitsShort() + !align * zero_bits_offset());
+  vector<expr> vars(fn_vars.begin(), fn_vars.end());
   p = prepend_if(local.toBVBool(),
-                 expr::mkVar(name.c_str(), bits), ptr_has_local_bit());
+                 expr::mkUF(name.c_str(), vars, ty), ptr_has_local_bit());
   if (align)
     p = p.concat_zeros(zero_bits_offset());
   if (bits_for_ptrattrs)
@@ -2103,9 +2105,11 @@ Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
                 const vector<PtrInput> *set_ptrs) const {
   bool localblk_map_empty = true;
 
+  auto s = state->getQuantVars();
   if (!other.state->isSource()) { // can happen when called from State::mkAxiom()
     const LocalBlkMap lbmap = other.getLocalBlkMap();
     localblk_map_empty = !lbmap.isValid() || lbmap.empty().isTrue();
+    s.insert(lbmap.getBidVars().begin(), lbmap.getBidVars().end());
   }
 
   if (num_nonlocals <= has_null_block && other.localptr_stored_locs.empty() &&
@@ -2113,7 +2117,7 @@ Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
     return { true, Pointer(*this, expr()), Pointer(*this, expr()) };
 
   assert(!memory_unused());
-  Pointer ptr(*this, "#idx_refinement", false);
+  Pointer ptr(*this, "#idx_refinement", false, true, true, {}, s);
   expr ptr_bid = ptr.getBid();
   expr offset = ptr.getOffset();
   expr ret(true);

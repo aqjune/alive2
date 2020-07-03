@@ -1,3 +1,4 @@
+; TEST-ARGS: -disable-undef-input
 declare i8* @malloc(i64)
 
 define void @src(i8** %glb, i8** %glb2) {
