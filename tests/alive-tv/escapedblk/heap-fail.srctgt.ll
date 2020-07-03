@@ -14,4 +14,4 @@ define i8* @tgt() {
   ret i8* %p
 }
 
-; ERROR: Value mismatch
+; ERROR: Mismatch in memory

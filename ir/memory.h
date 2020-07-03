@@ -107,7 +107,8 @@ class Pointer {
 public:
   Pointer(const Memory &m, const char *var_name,
           const smt::expr &local = false, bool unique_name = true,
-          bool align = true, const smt::expr &attr = smt::expr());
+          bool align = true, const smt::expr &attr = smt::expr(),
+          const std::set<smt::expr> &fn_vars = {});
   Pointer(const Memory &m, smt::expr p);
   Pointer(const Memory &m, unsigned bid, bool local);
   Pointer(const Memory &m, unsigned bid, const smt::expr &ofs, bool local);
