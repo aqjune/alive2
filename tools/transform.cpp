@@ -557,7 +557,7 @@ static void calculateAndInitConstants(Transform &t) {
 
   bool nullptr_is_used = false;
   has_int2ptr      = false;
-  has_ptr2int      = false;
+  has_ptr2int      = util::config::addresses_observed;
   has_alloca       = false;
   has_dead_allocas = false;
   has_malloc       = false;
@@ -568,8 +568,11 @@ static void calculateAndInitConstants(Transform &t) {
   does_ptr_mem_access = false;
   does_int_mem_access = false;
 
+  if (has_ptr2int || util::config::disable_bitsofs_opt)
+    max_alloc_size = max_access_size = max_gep_src = max_gep_tgt = UINT64_MAX;
+
   // Mininum access size (in bytes)
-  uint64_t min_access_size = 8;
+  uint64_t min_access_size = util::config::disable_byte_widening ? 1 : 8;
   bool does_mem_access = false;
   bool has_ptr_load = false;
   does_sub_byte_access = false;
@@ -739,6 +742,12 @@ static void calculateAndInitConstants(Transform &t) {
   memcmp_unroll_cnt = 10;
 
   little_endian = t.src.isLittleEndian();
+
+  if (util::config::disable_byte_specialization) {
+    does_ptr_mem_access = true;
+    does_ptr_store = true;
+    does_int_mem_access = true;
+  }
 
   if (config::debug)
     config::dbg() << "num_max_nonlocals_inst: " << num_max_nonlocals_inst

@@ -62,6 +62,32 @@ static llvm::cl::opt<unsigned> opt_smt_to(
     "smt-to", llvm::cl::desc("Timeout for SMT queries (default=1000)"),
     llvm::cl::init(1000), llvm::cl::value_desc("ms"), llvm::cl::cat(opt_alive));
 
+static llvm::cl::opt<bool> opt_disable_byte_widening(
+    "disable-byte-widening",
+    llvm::cl::desc("Alive: disable byte widening"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_disable_bitsofs_opt(
+    "disable-bitsofs-opt",
+    llvm::cl::desc("Alive: disable bits_for_offset optimize"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> opt_disable_byte_specialization(
+    "disable-byte-specialization",
+    llvm::cl::desc("Alive: disable byte specialization"));
+
+static llvm::cl::opt<bool> opt_disable_memsetcpy_unroll(
+    "disable-memsetcpy-unroll",
+    llvm::cl::desc("Alive: disable unrolling memset/memcpy"));
+
+static llvm::cl::opt<bool> opt_addresses_observed(
+    "addresses-observed",
+    llvm::cl::desc("Alive: assume that addresses are all observed"));
+
+static llvm::cl::opt<bool> opt_disable_all(
+    "disable-allopt",
+    llvm::cl::desc("Alive: disable optimizations"));
+
 static llvm::cl::opt<bool> opt_smt_verbose(
     "smt-verbose", llvm::cl::desc("SMT verbose mode"),
     llvm::cl::cat(opt_alive), llvm::cl::init(false));
@@ -404,6 +430,12 @@ convenient way to demonstrate an existing optimizer bug.
   config::disable_undef_input = opt_disable_undef;
   config::disable_poison_input = opt_disable_poison;
   config::debug = opt_debug;
+
+  config::disable_byte_widening = opt_disable_byte_widening || opt_disable_all;
+  config::disable_bitsofs_opt = opt_disable_bitsofs_opt || opt_disable_all;
+  config::disable_byte_specialization = opt_disable_byte_specialization || opt_disable_all;
+  config::disable_memsetcpy_unroll = opt_disable_memsetcpy_unroll || opt_disable_all;
+  config::addresses_observed = opt_addresses_observed || opt_disable_all;
 
   // optionally, redirect cout and cerr to user-specified file
   if (!opt_outputfile.empty()) {
