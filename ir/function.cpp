@@ -152,6 +152,24 @@ void Function::addInput(unique_ptr<Value> &&i) {
   inputs.emplace_back(move(i));
 }
 
+bool Function::hasNoMemInst() const {
+  for (auto &I: getInputs()) {
+    if (hasPtr(I.getType()))
+      return false;
+  }
+  for (auto &BB: BB_order) {
+    for (auto &inst: BB->instrs()) {
+      if (hasPtr(inst.getType()))
+        return false;
+      for (auto &v : inst.operands()) {
+        if (hasPtr(v->getType()))
+          return false;
+      }
+    }
+  }
+  return true;
+}
+
 bool Function::hasReturn() const {
   for (auto &i : instrs()) {
     if (dynamic_cast<const Return *>(&i))

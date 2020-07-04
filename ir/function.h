@@ -123,6 +123,7 @@ public:
   unsigned bitsPointers() const { return bits_pointers; }
   unsigned bitsPtrOffset() const { return bits_ptr_offset; }
   bool isLittleEndian() const { return little_endian; }
+  bool hasNoMemInst() const;
 
   void syncDataWithSrc(const Function &src);
 

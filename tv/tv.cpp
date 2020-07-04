@@ -133,7 +133,8 @@ bool showed_stats = false;
 bool report_dir_created = false;
 bool has_failure = false;
 bool is_clangtv = false;
-
+set<string> fns_unsupported;
+set<string> fns_nomem;
 
 struct TVPass final : public llvm::FunctionPass {
   static char ID;
@@ -166,6 +167,7 @@ struct TVPass final : public llvm::FunctionPass {
                                         : I->second.first.getGlobalVarNames());
     if (!fn) {
       fns.erase(I);
+      fns_unsupported.insert(F.getName().str());
       return false;
     }
 
@@ -203,8 +205,13 @@ struct TVPass final : public llvm::FunctionPass {
       assert(types.hasSingleTyping());
     }
 
-    if (Errors errs = verifier.verify()) {
+    if (t.src.hasNoMemInst() && t.tgt.hasNoMemInst()) {
+      *out << "Has no memory instruction, ignored." << endl;
+      fns_nomem.insert(F.getName().str());
+    } else if (Errors errs = verifier.verify()) {
       *out << "Transformation doesn't verify!\n" << errs << endl;
+      if (!errs.isUnsound())
+        fns_unsupported.insert(F.getName().str());
       has_failure |= errs.isUnsound();
       if (opt_error_fatal && has_failure)
         doFinalization(*F.getParent());
@@ -283,6 +290,9 @@ struct TVPass final : public llvm::FunctionPass {
       showed_stats = true;
       if (opt_smt_stats)
         smt::solver_print_stats(*out);
+      *out << "FNS COUNT: " << fns.size() << "\n";
+      *out << "FNS UNSUPPORTED: " << fns_unsupported.size() << "\n";
+      *out << "FNS NOMEM: " << fns_nomem.size() << "\n";
       if (has_failure && !report_filename.empty())
         cerr << "Report written to " << report_filename << endl;
     }
