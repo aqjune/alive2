@@ -603,15 +603,14 @@ static void calculateAndInitConstants(Transform &t) {
           nullptr_is_used |= has_nullptr(op);
         }
 
-        if (auto *fc = dynamic_cast<const FnCall*>(&i)) {
+        if (dynamic_cast<const FnCall*>(&i))
           has_fncall |= true;
-          has_free   |= !fc->getAttributes().has(FnAttrs::NoFree);
-        }
 
         if (auto *mi = dynamic_cast<const MemInstr *>(&i)) {
           max_alloc_size  = max(max_alloc_size, mi->getMaxAllocSize());
           max_access_size = max(max_access_size, mi->getMaxAccessSize());
           cur_max_gep     = add_saturate(cur_max_gep, mi->getMaxGEPOffset());
+          has_free       |= mi->canFree();
 
           auto info = mi->getByteAccessInfo();
           has_ptr_load         |= info.doesPtrLoad;
@@ -625,13 +624,9 @@ static void calculateAndInitConstants(Transform &t) {
           if (auto alloc = dynamic_cast<const Alloc*>(&i)) {
             has_alloca = true;
             has_dead_allocas |= alloc->initDead();
-          }
-          else if (auto alloc = dynamic_cast<const Malloc*>(&i)) {
-            has_malloc  = true;
-            has_free   |= alloc->isRealloc();
           } else {
-            has_malloc |= dynamic_cast<const Calloc*>(&i) != nullptr;
-            has_free   |= dynamic_cast<const Free*>(&i) != nullptr;
+            has_malloc |= dynamic_cast<const Malloc*>(&i) != nullptr ||
+                          dynamic_cast<const Calloc*>(&i) != nullptr;
           }
 
         } else if (isCast(ConversionOp::Int2Ptr, i) ||

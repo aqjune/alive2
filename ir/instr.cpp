@@ -21,6 +21,8 @@ using namespace std;
     val = &with
 #define DEFINE_AS_RETZERO(cls, method) \
   uint64_t cls::method() const { return 0; }
+#define DEFINE_AS_RETFALSE(cls, method) \
+  bool cls::method() const { return false; }
 #define DEFINE_AS_EMPTYACCESS(cls) \
   MemInstr::ByteAccessInfo cls::getByteAccessInfo() const \
   { return {}; }
@@ -1367,6 +1369,38 @@ unique_ptr<Instr> InsertValue::dup(const string &suffix) const {
   return ret;
 }
 
+DEFINE_AS_RETZERO(FnCall, getMaxAllocSize);
+DEFINE_AS_RETZERO(FnCall, getMaxGEPOffset);
+
+bool FnCall::canFree() const {
+  return !getAttributes().has(FnAttrs::NoFree);
+}
+
+uint64_t FnCall::getMaxAccessSize() const {
+  uint64_t sz = attrs.has(FnAttrs::Dereferenceable) ? attrs.getDerefBytes() : 0;
+  for (auto &arg : args) {
+    if (arg.second.has(ParamAttrs::Dereferenceable))
+      sz = max(sz, arg.second.getDerefBytes());
+  }
+  return sz;
+}
+
+FnCall::ByteAccessInfo FnCall::getByteAccessInfo() const {
+  bool has_deref = getAttributes().has(FnAttrs::Dereferenceable);
+  if (!has_deref) {
+    for (auto &arg : args)
+      if (arg.second.has(ParamAttrs::Dereferenceable)) {
+        has_deref = true;
+        break;
+      }
+  }
+  if (!has_deref)
+    // No dereferenceable attribute
+    return {};
+  // dereferenceable(n) does not guarantee that the pointer is n-byte aligned
+  return ByteAccessInfo::intOnly(1);
+}
+
 
 void FnCall::addArg(Value &arg, ParamAttrs &&attrs) {
   args.emplace_back(&arg, move(attrs));
@@ -2136,6 +2170,7 @@ MemInstr::ByteAccessInfo::full(unsigned byteSize, bool subByte) {
 DEFINE_AS_RETZERO(Alloc, getMaxAccessSize);
 DEFINE_AS_RETZERO(Alloc, getMaxGEPOffset);
 DEFINE_AS_EMPTYACCESS(Alloc);
+DEFINE_AS_RETFALSE(Alloc, canFree);
 
 uint64_t Alloc::getMaxAllocSize() const {
   if (auto bytes = getInt(*size)) {
@@ -2206,6 +2241,10 @@ DEFINE_AS_EMPTYACCESS(Malloc);
 
 uint64_t Malloc::getMaxAllocSize() const {
   return getIntOr(*size, UINT64_MAX);
+}
+
+bool Malloc::canFree() const {
+  return ptr != nullptr;
 }
 
 vector<Value*> Malloc::operands() const {
@@ -2280,6 +2319,7 @@ unique_ptr<Instr> Malloc::dup(const string &suffix) const {
 
 DEFINE_AS_RETZERO(Calloc, getMaxAccessSize);
 DEFINE_AS_RETZERO(Calloc, getMaxGEPOffset);
+DEFINE_AS_RETFALSE(Calloc, canFree);
 
 uint64_t Calloc::getMaxAllocSize() const {
   if (auto sz = getInt(*size)) {
@@ -2346,6 +2386,7 @@ DEFINE_AS_RETZERO(StartLifetime, getMaxAllocSize);
 DEFINE_AS_RETZERO(StartLifetime, getMaxAccessSize);
 DEFINE_AS_RETZERO(StartLifetime, getMaxGEPOffset);
 DEFINE_AS_EMPTYACCESS(StartLifetime);
+DEFINE_AS_RETFALSE(StartLifetime, canFree);
 
 vector<Value*> StartLifetime::operands() const {
   return { ptr };
@@ -2384,6 +2425,10 @@ vector<Value*> Free::operands() const {
   return { ptr };
 }
 
+bool Free::canFree() const {
+  return true;
+}
+
 void Free::rauw(const Value &what, Value &with) {
   RAUW(ptr);
 }
@@ -2420,6 +2465,7 @@ void GEP::addIdx(unsigned obj_size, Value &idx) {
 DEFINE_AS_RETZERO(GEP, getMaxAllocSize);
 DEFINE_AS_RETZERO(GEP, getMaxAccessSize);
 DEFINE_AS_EMPTYACCESS(GEP);
+DEFINE_AS_RETFALSE(GEP, canFree);
 
 uint64_t GEP::getMaxGEPOffset() const {
   int64_t off = 0;
@@ -2546,6 +2592,7 @@ unique_ptr<Instr> GEP::dup(const string &suffix) const {
 
 DEFINE_AS_RETZERO(Load, getMaxAllocSize);
 DEFINE_AS_RETZERO(Load, getMaxGEPOffset);
+DEFINE_AS_RETFALSE(Load, canFree);
 
 uint64_t Load::getMaxAccessSize() const {
   return Memory::getStoreByteSize(getType());
@@ -2588,6 +2635,7 @@ unique_ptr<Instr> Load::dup(const string &suffix) const {
 
 DEFINE_AS_RETZERO(Store, getMaxAllocSize);
 DEFINE_AS_RETZERO(Store, getMaxGEPOffset);
+DEFINE_AS_RETFALSE(Store, canFree);
 
 uint64_t Store::getMaxAccessSize() const {
   return Memory::getStoreByteSize(val->getType());
@@ -2629,6 +2677,7 @@ unique_ptr<Instr> Store::dup(const string &suffix) const {
 
 DEFINE_AS_RETZERO(Memset, getMaxAllocSize);
 DEFINE_AS_RETZERO(Memset, getMaxGEPOffset);
+DEFINE_AS_RETFALSE(Memset, canFree);
 
 uint64_t Memset::getMaxAccessSize() const {
   return getIntOr(*bytes, UINT64_MAX);
@@ -2679,6 +2728,7 @@ unique_ptr<Instr> Memset::dup(const string &suffix) const {
 
 DEFINE_AS_RETZERO(Memcpy, getMaxAllocSize);
 DEFINE_AS_RETZERO(Memcpy, getMaxGEPOffset);
+DEFINE_AS_RETFALSE(Memcpy, canFree);
 
 uint64_t Memcpy::getMaxAccessSize() const {
   return getIntOr(*bytes, UINT64_MAX);
@@ -2740,6 +2790,7 @@ unique_ptr<Instr> Memcpy::dup(const string &suffix) const {
 
 DEFINE_AS_RETZERO(Memcmp, getMaxAllocSize);
 DEFINE_AS_RETZERO(Memcmp, getMaxGEPOffset);
+DEFINE_AS_RETFALSE(Memcmp, canFree);
 
 uint64_t Memcmp::getMaxAccessSize() const {
   return getIntOr(*num, UINT64_MAX);
@@ -2829,6 +2880,7 @@ unique_ptr<Instr> Memcmp::dup(const string &suffix) const {
 
 DEFINE_AS_RETZERO(Strlen, getMaxAllocSize);
 DEFINE_AS_RETZERO(Strlen, getMaxGEPOffset);
+DEFINE_AS_RETFALSE(Strlen, canFree);
 
 uint64_t Strlen::getMaxAccessSize() const {
   return getGlobalVarSize(ptr);
