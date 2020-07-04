@@ -743,7 +743,7 @@ static void calculateAndInitConstants(Transform &t) {
 
   little_endian = t.src.isLittleEndian();
 
-  if (util::config::disable_byte_specialization) {
+  if (util::config::disable_byte_specialization && does_mem_access) {
     does_ptr_mem_access = true;
     does_ptr_store = true;
     does_int_mem_access = true;
