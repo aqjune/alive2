@@ -161,6 +161,8 @@ bool Function::hasNoMemInst() const {
     for (auto &inst: BB->instrs()) {
       if (hasPtr(inst.getType()))
         return false;
+      if (dynamic_cast<const FnCall *>(&inst))
+        return false;
       for (auto &v : inst.operands()) {
         if (hasPtr(v->getType()))
           return false;

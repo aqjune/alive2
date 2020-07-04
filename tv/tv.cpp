@@ -133,6 +133,7 @@ bool showed_stats = false;
 bool report_dir_created = false;
 bool has_failure = false;
 bool is_clangtv = false;
+set<string> fns_visited;
 set<string> fns_unsupported;
 set<string> fns_nomem;
 
@@ -149,6 +150,7 @@ struct TVPass final : public llvm::FunctionPass {
     if (!fnsToVerify.empty() && !fnsToVerify.count(F.getName().str()))
       return false;
 
+    fns_visited.insert(F.getName().str());
     llvm::TargetLibraryInfo *TLI = nullptr;
     unique_ptr<llvm::TargetLibraryInfo> TLI_holder;
     if (is_clangtv) {
@@ -290,7 +292,7 @@ struct TVPass final : public llvm::FunctionPass {
       showed_stats = true;
       if (opt_smt_stats)
         smt::solver_print_stats(*out);
-      *out << "FNS COUNT: " << fns.size() << "\n";
+      *out << "FNS COUNT: " << fns_visited.size() << "\n";
       *out << "FNS UNSUPPORTED: " << fns_unsupported.size() << "\n";
       *out << "FNS NOMEM: " << fns_nomem.size() << "\n";
       if (has_failure && !report_filename.empty())
