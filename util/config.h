@@ -19,6 +19,17 @@ extern bool disable_undef_input;
 
 extern bool debug;
 
+extern bool disable_byte_widening;
+
+extern bool disable_bitsofs_opt;
+
+extern bool disable_byte_specialization;
+
+extern bool addresses_observed;
+
+extern bool disable_memsetcpy_unroll;
+
+
 std::ostream &dbg();
 void set_debug(std::ostream &os);
 
