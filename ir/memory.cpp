@@ -1611,7 +1611,8 @@ void Memory::memset(const expr &p, const StateValue &val, const expr &bytesize,
   assert(bytes.size() == 1);
 
   uint64_t n;
-  if (bytesize.isUInt(n) && (n / bytesz) <= 4) {
+  if (!util::config::disable_memsetcpy_unroll && bytesize.isUInt(n) &&
+      (n / bytesz) <= 4) {
     for (unsigned i = 0; i < n; i += bytesz) {
       store(ptr + i, bytes[0](), local_block_val, non_local_block_val);
     }
@@ -1638,7 +1639,8 @@ void Memory::memcpy(const expr &d, const expr &s, const expr &bytesize,
     return;
 
   uint64_t n;
-  if (bytesize.isUInt(n) && (n / bytesz) <= 4) {
+  if (!util::config::disable_memsetcpy_unroll && bytesize.isUInt(n) &&
+      (n / bytesz) <= 4) {
     auto old_local = local_block_val, old_nonlocal = non_local_block_val;
     for (unsigned i = 0; i < n; i += bytesz) {
       store(dst + i, ::load(src + i, old_local, old_nonlocal),
