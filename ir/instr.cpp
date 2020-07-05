@@ -2271,6 +2271,7 @@ StateValue Alloc::toSMT(State &s) const {
     sz = sz.sextOrTrunc(bits_size_t);
     auto m = mul_e.sextOrTrunc(bits_size_t);
     s.addUB(sz.mul_no_soverflow(m));
+    s.addUB((sz * m).extract(bits_size_t - 1, bits_size_t - 1) == 0);
     sz = sz * m;
   }
 
