@@ -501,8 +501,7 @@ void State::mkAxioms(State &tgt) {
             auto qbid = q.getShortBid(), pbid = p.getShortBid();
 
             // We can't use Pointer::refined because we don't have post-call
-            // memory yet (we can construct post-call memory, but it is
-            // expensive for vcgen).
+            // memory constructed.
             // Let's do what Pointer::refined does using input
             // memory and mem_state only.
             expr local_chk(false);
@@ -515,11 +514,12 @@ void State::mkAxioms(State &tgt) {
             }
             expr nonlocal_chk = pbid == qbid;
 
-            val_refines = p.isBlockAlive().implies(
-                q.isBlockAlive() &&
+            val_refines =
                 p.isLocal() == q.isLocal() &&
                 p.getOffset() == q.getOffset() &&
-                expr::mkIf(p.isLocal(), local_chk, nonlocal_chk));
+                expr::mkIf(p.isLocal(),
+                  p.isBlockAlive().implies(q.isBlockAlive() && local_chk),
+                  nonlocal_chk);
           } else
             val_refines = rets[i].value == rets2[i].value;
 
@@ -531,6 +531,7 @@ void State::mkAxioms(State &tgt) {
         expr pre = refines.implies(ref_expr &&
                                    ub.implies(ub2) &&
                                    move(memstate_implies));
+        //cout << ": " << pre << "\n";
         tgt.addPre(move(pre));
       }
     }
