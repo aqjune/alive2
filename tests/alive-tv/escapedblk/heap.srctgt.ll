@@ -10,6 +10,6 @@ define i8* @src(i64 %x) {
 define i8* @tgt(i64 %x) {
   %p = call i8* @malloc(i64 8)
   %p8 = bitcast i8* %p to i64*
-  store i64 %x, i64* %p8
+  store i64 %x, i64* %p8 ; poison to %x; fine
   ret i8* %p
 }

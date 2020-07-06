@@ -258,7 +258,6 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
   }
 
   // TODO: try out instantiating the undefs in forall quantifier
-
   return insts;
 }
 
@@ -346,8 +345,8 @@ check_refinement(Errors &errs, Transform &t, State &src_state, State &tgt_state,
   if (lbm.isValid()) {
     // Quantify variables used for local block mapping
     qvars.insert(lbm.getBidVars().begin(), lbm.getBidVars().end());
-    // Encode disjointness of mapped blocks
-    pre_src &= lbm.disjointness(tgt_mem);
+    // Encode wellformedness of mapped blocks
+    pre_src &= lbm.wellformedness(src_mem, tgt_mem);
   }
 
   if (check_expr(axioms_expr && (pre_src && pre_tgt)).isUnsat()) {

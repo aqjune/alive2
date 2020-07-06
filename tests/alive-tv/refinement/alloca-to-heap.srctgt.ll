@@ -10,3 +10,5 @@ define i8* @tgt() {
   %p = call i8* @malloc(i64 8)
   ret i8* %p
 }
+; Is this even a transformation to consider?
+; ERROR: Mismatch in memory

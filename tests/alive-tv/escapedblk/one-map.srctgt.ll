@@ -15,3 +15,6 @@ define void @tgt(i1 %c0) {
   store i8* %r, i8** @glb
   ret void
 }
+
+; This case is unsupported.
+; ERROR: Precondition is always false

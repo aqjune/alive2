@@ -238,7 +238,7 @@ public:
     Pointer mapPtr(const Pointer &ptr_tgt, const Memory &m_src) const;
     Byte mapByte(const Byte &byte_tgt, const Memory &m_src) const;
 
-    smt::expr disjointness(const Memory &m_tgt) const;
+    smt::expr wellformedness(const Memory &m_src, const Memory &m_tgt) const;
 
     const auto &getBidVars() const { return bid_vars; }
 

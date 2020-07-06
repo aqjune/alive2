@@ -2136,6 +2136,9 @@ StateValue Return::toSMT(State &s) const {
   if (!s.isSource())
     s.getMemory().setLocalBlkMap(Memory::LocalBlkMap::create(s, {}));
 
+  if (val->getType().isPtrType() && retval.non_poison.isTrue())
+    s.getMemory().escapeLocalPtr(retval.value);
+
   auto &attrs = s.getFn().getFnAttrs();
   bool isDeref = attrs.has(FnAttrs::Dereferenceable);
   bool isNonNull = attrs.has(FnAttrs::NonNull);

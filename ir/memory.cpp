@@ -1401,7 +1401,9 @@ Memory::LocalBlkMap::mapByte(const Byte &byte_tgt, const Memory &m_src) const {
     expr::mkIf(byte_tgt.isPtr(), b2(), byte_tgt()));
 }
 
-expr Memory::LocalBlkMap::disjointness(const Memory &m_tgt) const {
+expr Memory::LocalBlkMap::wellformedness(const Memory &m_src,
+                                         const Memory &m_tgt)
+    const {
   if (!isValid())
     return expr();
 
@@ -1411,25 +1413,48 @@ expr Memory::LocalBlkMap::disjointness(const Memory &m_tgt) const {
   };
 
   vector<expr> escaped_bids;
+  expr has_set(true);
   for (unsigned i = 0; i < m_tgt.numLocals(); ++i) {
     expr sbid = to_sbid(i);
-    bool cond = !has(sbid).isFalse();
-    if (approximate_localblkmap())
+    if (approximate_localblkmap()) {
+      bool cond = !has(sbid).isFalse();
       cond &= !m_tgt.isEscapedLocal(sbid).isFalse();
-    if (cond)
+      if (cond)
+        escaped_bids.emplace_back(move(sbid));
+    } else {
+      if (m_tgt.isEscapedLocal(sbid).isFalse())
+        continue;
+      else if (Pointer(m_tgt, i, true).isHeapAllocated().isFalse())
+        continue;
+      has_set &= has(sbid);
       escaped_bids.emplace_back(move(sbid));
+    }
   }
 
   expr disj(true);
+  if (!approximate_localblkmap()) {
+    disj = has_set;
+  }
+
   for (unsigned idx = 0; idx < escaped_bids.size(); ++idx) {
-    expr i = escaped_bids[idx];
-    expr cond = has(i);
-    expr disj_i(true);
-    for (unsigned idx2 = idx + 1; idx2 < escaped_bids.size(); ++idx2) {
-      expr j = escaped_bids[idx2];
-      disj_i &= has(j).implies(get(i) != get(j));
+    if (approximate_localblkmap()) {
+      expr i = escaped_bids[idx];
+      expr cond = has(i);
+      expr disj_i(true);
+      for (unsigned idx2 = idx + 1; idx2 < escaped_bids.size(); ++idx2) {
+        expr j = escaped_bids[idx2];
+        disj_i &= has(j).implies(get(i) != get(j));
+      }
+      disj &= cond.implies(move(disj_i));
+    } else {
+      expr i = escaped_bids[idx];
+      expr disj_i(true);
+      for (unsigned idx2 = idx + 1; idx2 < escaped_bids.size(); ++idx2) {
+        expr j = escaped_bids[idx2];
+        disj_i &= get(i) != get(j);
+      }
+      disj &= disj_i && get(i).ule(m_src.numLocals() - 1);
     }
-    disj &= cond.implies(move(disj_i));
   }
   return disj;
 }
@@ -1621,8 +1646,10 @@ Memory::LocalBlkMap::create(State &st_tgt,
       Pointer p(m, i, true);
       auto local_bid_tgt = p.getShortBid();
       expr new_src_bid = expr::mkFreshVar("src_blk_id", local_bid_tgt);
+      expr src_bid_mapped = expr::mkFreshVar("src_blk_mapped", expr(true));
       lbm.bid_vars.insert(new_src_bid);
-      lbm.updateIf(true, local_bid_tgt, move(new_src_bid));
+      lbm.bid_vars.insert(src_bid_mapped);
+      lbm.updateIf(src_bid_mapped, local_bid_tgt, move(new_src_bid));
     }
   }
 
@@ -2182,14 +2209,13 @@ Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
     }
   }
 
-  Pointer ptr_local(*this, "#idx_local_refinement", true);
+  Pointer ptr_local(*this, "#idx_local_refinement", true, true, true, {}, s);
   if (!other.local_blk_map.empty().isTrue()) {
     // Check refinement between mapped local blocks
     for (unsigned bid_tgt = 0; bid_tgt < num_locals_tgt; ++bid_tgt) {
-      if (approximate_localblkmap() && !other.escaped_local_blks[bid_tgt])
-        // If there are function calls, mapping isn't exactly created; ignore
-        // this block if known to never escape
+      if (!other.escaped_local_blks[bid_tgt]) {
         continue;
+      }
 
       expr sbid_tgt = expr::mkUInt(bid_tgt, bits_shortbid());
 
@@ -2204,7 +2230,14 @@ Memory::refined(const Memory &other, bool skip_constants, bool end_of_fun,
       if (end_of_fun)
         e = q.isHeapAllocated().implies(e);
 
-      ret &= move(e);
+      ret &= e;
+    }
+  }
+
+  expr e2 = ret;
+  for (auto &v: s) {
+    if (v.isBool()) {
+      e2 = e2.subst(v, false);
     }
   }
 
