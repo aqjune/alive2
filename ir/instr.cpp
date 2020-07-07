@@ -2130,18 +2130,20 @@ static void addUBForNoCaptureRet(State &s, const StateValue &svret,
 StateValue Return::toSMT(State &s) const {
   // Encode nocapture semantics.
   auto &retval = s[*val];
-  s.addUB(s.getMemory().checkNocapture());
+  auto &m = s.getMemory();
+  s.addUB(m.checkNocapture());
   addUBForNoCaptureRet(s, retval, val->getType());
-  s.getMemory().markAllocasAsDead();
+  m.markAllocasAsDead();
+  m.saturateEscapedLocalBlkSet();
   if (!s.isSource())
-    s.getMemory().setLocalBlkMap(Memory::LocalBlkMap::create(s, {}));
+    m.setLocalBlkMap(Memory::LocalBlkMap::create(s, {}));
 
   auto &attrs = s.getFn().getFnAttrs();
   bool isDeref = attrs.has(FnAttrs::Dereferenceable);
   bool isNonNull = attrs.has(FnAttrs::NonNull);
   if (isDeref || isNonNull) {
     assert(val->getType().isPtrType());
-    Pointer p(s.getMemory(), retval.value);
+    Pointer p(m, retval.value);
     s.addUB(retval.non_poison);
 
     if (isDeref) {

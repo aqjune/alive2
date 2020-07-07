@@ -247,6 +247,8 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
       memory.escapeLocalPtr(v.val.value);
   }
 
+  memory.saturateEscapedLocalBlkSet();
+
   // TODO: this doesn't need to compare the full memory, just a subset of fields
   auto call_data_pair
     = fn_call_data[name].try_emplace({ move(inputs), ptr_inputs,
@@ -531,7 +533,6 @@ void State::mkAxioms(State &tgt) {
         expr pre = refines.implies(ref_expr &&
                                    ub.implies(ub2) &&
                                    move(memstate_implies));
-        //cout << ": " << pre << "\n";
         tgt.addPre(move(pre));
       }
     }

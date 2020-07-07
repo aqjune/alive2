@@ -8,6 +8,7 @@
 #include "smt/solver.h"
 #include "util/compiler.h"
 #include "util/config.h"
+#include <queue>
 #include <string>
 #include <iostream>
 using namespace IR;
@@ -1040,8 +1041,10 @@ void Memory::store(const Pointer &p, const expr &val, expr &local,
                    expr &non_local) {
   if (numLocals() > 0) {
     Byte byte(*this, expr(val));
-    if (byte.isPtr().isTrue())
-      escapeLocalPtr(byte.ptrValue());
+    if (byte.isPtr().isTrue()) {
+      expr loc = p();
+      escapeLocalPtr(byte.ptrValue(), &loc);
+    }
   }
   auto is_local = p.isLocal();
   auto idx = p.shortPtr();
@@ -1199,6 +1202,7 @@ Memory::Memory(State &state) : state(&state) {
 
   // All local blocks are not escaped & unmapped
   escaped_local_blks.resize(numLocals(), false);
+  escaped_local_blks_adjlist.resize(numLocals());
   if (!state.isSource())
     local_blk_map = LocalBlkMap(true);
 
@@ -1316,7 +1320,7 @@ pair<expr, expr> Memory::mkUndefInput(const ParamAttrs &attrs) const {
 
 pair<expr,expr>
 Memory::mkFnRet(const char *name,
-                const vector<PtrInput> &ptr_inputs) const {
+                const vector<PtrInput> &ptr_inputs) {
   expr var
     = expr::mkFreshVar(name, expr::mkUInt(0, bits_for_bid + bits_for_offset));
   Pointer p(*this, var.concat_zeros(bits_for_ptrattrs));
@@ -1339,6 +1343,7 @@ Memory::mkFnRet(const char *name,
     expr::mkIf(p.isLocal(false),
                isEscapedLocal(p.getShortBid()) || expr::mk_or(local),
                p.getShortBid().ule(numNonlocals() - 1)));
+  fn_ret_vars.insert(var);
   return { p.release(), move(var) };
 }
 
@@ -2212,14 +2217,81 @@ expr Memory::checkNocapture() const {
   return res;
 }
 
-void Memory::escapeLocalPtr(const expr &ptr) {
+void Memory::escapeLocalPtr(const expr &ptr, const expr *loc_to) {
+  if (!ptr.isValid() || (loc_to && !loc_to->isValid()))
+    return;
+
+  function<void(unsigned)> escape = [&](unsigned bid) {
+    escaped_local_blks[bid] = true;
+  };
+
   uint64_t bid;
+  unsigned hi, lo;
+  expr sel, blk, idx;
+
+  if (loc_to) {
+    Pointer loc_to_ptr(*this, *loc_to);
+    uint64_t loc_bid;
+    if (loc_to_ptr.isLocal().isTrue() &&
+        loc_to_ptr.getShortBid().isUInt(loc_bid)) {
+      escape = [this, loc_bid](unsigned bid) {
+        escaped_local_blks_adjlist[loc_bid].insert(bid);
+      };
+    }
+  }
 
   for (const auto &bid_expr : extract_possible_local_bids(*this, ptr)) {
     if (bid_expr.isUInt(bid)) {
       if (bid < numLocals())
-        escaped_local_blks[bid] = true;
+        escape(bid);
+      continue;
     }
+
+    if (bid_expr.isExtract(sel, hi, lo)) {
+      if (sel.isLoad(blk, idx)) {
+        // initial non local block bytes don't contain local pointers.
+        if (blk.eq(mk_block_val_array()))
+          continue;
+
+        string name = blk.fn_name();
+        if (name.length() != 0) {
+          string_view sv(name);
+          if (sv.substr(0, 8) == "blk_val!" ||
+              sv.substr(0, 13) == "localblk_val!") {
+            continue;
+          }
+        }
+      }
+      if (fn_ret_vars.find(sel) != fn_ret_vars.end())
+        // Function returned pointer preserves a set of escaped blocks
+        continue;
+    }
+
+    // may escape a local ptr, but we don't know which one
+    escaped_local_blks.clear();
+    escaped_local_blks.resize(numLocals(), true);
+    break;
+  }
+}
+
+void Memory::saturateEscapedLocalBlkSet() {
+  queue<unsigned> worklist;
+  for (unsigned i = 0; i < escaped_local_blks.size(); ++i)
+    if (escaped_local_blks[i]) {
+      worklist.push(i);
+    }
+
+  while (!worklist.empty()) {
+    unsigned i = worklist.front();
+    worklist.pop();
+
+    for (unsigned j: escaped_local_blks_adjlist[i]) {
+      if (escaped_local_blks[j])
+        continue;
+      escaped_local_blks[j] = true;
+      worklist.push(j);
+    }
+    escaped_local_blks_adjlist[i].clear();
   }
 }
 
@@ -2263,9 +2335,15 @@ Memory Memory::mkIf(const expr &cond, const Memory &then, const Memory &els) {
   ret.non_local_blk_kind.add(els.non_local_blk_kind);
   ret.byval_blks.insert(ret.byval_blks.end(), els.byval_blks.begin(),
                         els.byval_blks.end());
+  ret.fn_ret_vars.insert(ret.fn_ret_vars.begin(), ret.fn_ret_vars.end());
+
+  assert(then.numLocals() == els.numLocals());
   for (unsigned i = 0, nlocals = then.numLocals(); i < nlocals; ++i) {
     if (els.escaped_local_blks[i])
       ret.escaped_local_blks[i] = true;
+    ret.escaped_local_blks_adjlist[i].insert(
+        els.escaped_local_blks_adjlist[i].begin(),
+        els.escaped_local_blks_adjlist[i].end());
   }
   ret.localptr_stored_locs.insert(els.localptr_stored_locs.begin(),
                                   els.localptr_stored_locs.end());
@@ -2320,6 +2398,8 @@ void Memory::print(ostream &os, const Model &m) const {
       P("alloc type", p.getAllocType());
       if (observes_addresses())
         P("address", p.getAddress());
+      if (local)
+        os << "\tescaped: " << escaped_local_blks[bid];
       os << '\n';
     }
   };

@@ -278,6 +278,12 @@ private:
 
   std::vector<unsigned> byval_blks;
   std::vector<bool> escaped_local_blks;
+  // escaped_local_blks_adjlist[short_bid_local]:
+  // a list of short local bids that short_bid_local has.
+  // saturateEscapedLocals will clear this and update escaped_local_blks.
+  std::vector<std::set<unsigned>> escaped_local_blks_adjlist;
+  // A set of variable used for function return values
+  std::set<smt::expr> fn_ret_vars;
 
   std::set<smt::expr> undef_vars;
 
@@ -345,7 +351,7 @@ public:
 
   std::pair<smt::expr, smt::expr>
     mkFnRet(const char *name,
-            const std::vector<PtrInput> &ptr_inputs) const;
+            const std::vector<PtrInput> &ptr_inputs);
   CallState mkCallState(const std::vector<PtrInput> &ptr_inputs,
                         bool argmemonly, bool nofree, bool writes_memory)
       const;
@@ -407,7 +413,8 @@ public:
 
   // Returns true if a nocapture pointer byte is not in the memory.
   smt::expr checkNocapture() const;
-  void escapeLocalPtr(const smt::expr &ptr);
+  void escapeLocalPtr(const smt::expr &ptr, const smt::expr *loc_to = nullptr);
+  void saturateEscapedLocalBlkSet();
   smt::expr isEscapedLocal(const smt::expr &short_bid) const;
   void setLocalBlkMap(const LocalBlkMap &lm);
   const LocalBlkMap &getLocalBlkMap() const;
