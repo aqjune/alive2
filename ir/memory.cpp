@@ -825,9 +825,8 @@ expr Pointer::encodeByValArgRefinement(const Pointer &other) const {
 expr Pointer::refined(const Pointer &other, bool use_mapping_only) const {
   expr local = encodeLocalPtrRefinement(other, use_mapping_only);
 
-  return expr::mkIf(isLocal(),
-      isBlockAlive().implies(other.isBlockAlive() && move(local)),
-      *this == other);
+  return expr::mkIf(isLocal(), move(local), *this == other) &&
+      isBlockAlive().implies(other.isBlockAlive());
 }
 
 expr Pointer::fninputRefined(const Pointer &other, bool is_byval_arg) const {
@@ -839,10 +838,8 @@ expr Pointer::fninputRefined(const Pointer &other, bool is_byval_arg) const {
     local = encodeLocalPtrRefinement(other, false);
 
   return expr::mkIf(isLocal(),
-        isBlockAlive().implies(
-            other.isBlockAlive() &&
-            expr::mkIf(is_byval_arg, move(byval), move(local))),
-        *this == other);
+        expr::mkIf(is_byval_arg, move(byval), move(local)),
+        *this == other) && isBlockAlive().implies(other.isBlockAlive());
 }
 
 expr Pointer::blockValRefined(const Pointer &other) const {
@@ -912,7 +909,7 @@ expr Pointer::blockRefined(const Pointer &other, bool is_sameblk) const {
 
   expr alive = isBlockAlive();
   expr cond =
-         alive == other.isBlockAlive() &&
+         isBlockAlive().implies(other.isBlockAlive()) &&
          blk_size == other.blockSize() &&
          getAllocType() == other.getAllocType() &&
          m.state->simplifyWithAxioms(

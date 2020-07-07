@@ -512,16 +512,14 @@ void State::mkAxioms(State &tgt) {
               if (lbm.isValid() && !lbm.empty().isTrue())
                 // In case of miscompilation, local pointers may not have
                 // mapping at all
-                local_chk = lbm.mappedOrEmpty(qbid, pbid);
+                local_chk = q.isLocal() && p.getOffset() == q.getOffset() &&
+                            lbm.mappedOrEmpty(qbid, pbid);
             }
-            expr nonlocal_chk = pbid == qbid;
+            expr nonlocal_chk = p == q;
 
             val_refines =
-                p.isLocal() == q.isLocal() &&
-                p.getOffset() == q.getOffset() &&
-                expr::mkIf(p.isLocal(),
-                  p.isBlockAlive().implies(q.isBlockAlive() && local_chk),
-                  nonlocal_chk);
+                expr::mkIf(p.isLocal(), move(local_chk), move(nonlocal_chk)) &&
+                  p.isBlockAlive().implies(q.isBlockAlive());
           } else
             val_refines = rets[i].value == rets2[i].value;
 
