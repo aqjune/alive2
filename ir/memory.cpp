@@ -1387,7 +1387,7 @@ Memory::LocalBlkMap::mapPtr(const Pointer &ptr_tgt, const Memory &m_src) const {
 
 Byte
 Memory::LocalBlkMap::mapByte(const Byte &byte_tgt, const Memory &m_src) const {
-  if (!does_ptr_mem_access)
+  if (!does_ptr_store)
     return Byte(m_src, expr(byte_tgt()));
 
   Pointer p_src = mapPtr(byte_tgt.ptr(), m_src);
@@ -1461,20 +1461,22 @@ expr Memory::CallState::implies(const CallState &st,
   if (empty || st.empty)
     return true;
 
+  const LocalBlkMap &lbmap = st.local_blk_map;
   auto map_localblks =
       [&](const Pointer &p_src, const Pointer &p_tgt,
           const expr &val_var_src, const expr &val_var_tgt) {
     Byte src_byte(m_src_beforecall, val_var_src.load(p_src.shortPtr()));
     Byte tgt_byte(m_tgt_beforecall, val_var_tgt.load(p_tgt.shortPtr()));
 
-    return st.local_blk_map.mapByte(tgt_byte, m_src_beforecall) == src_byte;
+    return lbmap.mapByte(tgt_byte, m_src_beforecall) == src_byte;
   };
+  bool lbmap_empty = !lbmap.isValid() || lbmap.empty().isTrue();
 
   // NOTE: using equality here is an approximation.
   // TODO: benchmark using quantifiers to state implication
   expr ret(true);
   if (block_val_var.isValid() && st.block_val_var.isValid()) {
-    if (m_tgt_beforecall.numLocals() && m_src_beforecall.numLocals()) {
+    if (!lbmap_empty) {
       Pointer p_tgt(m_tgt_beforecall, "implies_ptr", false);
       Pointer p_src(m_src_beforecall, p_tgt());
       expr e = expr::mkForAll({ p_tgt.shortPtr() },
@@ -1499,7 +1501,7 @@ expr Memory::CallState::implies(const CallState &st,
 
       if (map_cond.isFalse())
         continue;
-      ret &= map_cond.implies(st.local_blk_map.mapped(pi_tgt, pi_src));
+      ret &= map_cond.implies(lbmap.mapped(pi_tgt, pi_src));
     }
 
     // Relate local blocks that are escaped to nonlocals
@@ -1526,20 +1528,20 @@ expr Memory::CallState::implies(const CallState &st,
       // In case of miscompilation, local blocks may not have mapping at all.
       expr e = (!b_src.isPoison() && !b_tgt.isPoison() &&
                 loaded_p_tgt.isLocal() && loaded_p_src.isLocal())
-          .implies(st.local_blk_map.mappedOrEmpty(loaded_p_tgt.getShortBid(),
-                                                  loaded_p_src.getShortBid()));
+          .implies(lbmap.mappedOrEmpty(loaded_p_tgt.getShortBid(),
+                                       loaded_p_src.getShortBid()));
       ret &= move(e);
     }
 
     // Encode the bytes of escaped local blocks.
-    if (st.local_blk_map.isValid() && !st.local_blk_map.empty().isTrue()) {
+    if (!lbmap_empty) {
       Pointer p_tgt(m_tgt_beforecall, "implies_ptr_local", true);
-      expr new_bid = st.local_blk_map.get(p_tgt.getShortBid(), true);
+      expr new_bid = lbmap.get(p_tgt.getShortBid(), true);
       Pointer p_src(m_src_beforecall, new_bid, p_tgt.getOffset());
 
       ret &=
       expr::mkForAll({ p_tgt.shortPtr() },
-        st.local_blk_map.has(p_tgt.getShortBid()).implies(
+        lbmap.has(p_tgt.getShortBid()).implies(
           map_localblks(p_src, p_tgt, local_val_var, st.local_val_var)));
     } else {
       ret &= local_val_var == st.local_val_var;
