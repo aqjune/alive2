@@ -700,8 +700,8 @@ static void calculateAndInitConstants(Transform &t) {
   // in case a different pointer from source is produced.
   auto num_max_nonlocals_inst
     = max(num_nonlocals_inst_src, num_nonlocals_inst_tgt);
-  if (num_nonlocals_inst_src && num_nonlocals_inst_tgt)
-    ++num_max_nonlocals_inst;
+  //if (num_nonlocals_inst_src && num_nonlocals_inst_tgt)
+  //  ++num_max_nonlocals_inst;
 
   num_nonlocals_src = num_globals_src + num_ptrinputs + num_max_nonlocals_inst +
                       has_null_block;
