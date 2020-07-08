@@ -10,3 +10,5 @@ define i8* @tgt() {
   %p = call i8* @malloc(i64 8)
   ret i8* %p
 }
+
+; ERROR: Value mismatch
