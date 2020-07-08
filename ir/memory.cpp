@@ -2225,8 +2225,6 @@ void Memory::escapeLocalPtr(const expr &ptr, const expr *loc_to) {
   };
 
   uint64_t bid;
-  unsigned hi, lo;
-  expr sel, blk, idx;
 
   if (loc_to) {
     Pointer loc_to_ptr(*this, *loc_to);
@@ -2245,31 +2243,6 @@ void Memory::escapeLocalPtr(const expr &ptr, const expr *loc_to) {
         escape(bid);
       continue;
     }
-
-    if (bid_expr.isExtract(sel, hi, lo)) {
-      if (sel.isLoad(blk, idx)) {
-        // initial non local block bytes don't contain local pointers.
-        if (blk.eq(mk_block_val_array()))
-          continue;
-
-        string name = blk.fn_name();
-        if (name.length() != 0) {
-          string_view sv(name);
-          if (sv.substr(0, 8) == "blk_val!" ||
-              sv.substr(0, 13) == "localblk_val!") {
-            continue;
-          }
-        }
-      }
-      if (fn_ret_vars.find(sel) != fn_ret_vars.end())
-        // Function returned pointer preserves a set of escaped blocks
-        continue;
-    }
-
-    // may escape a local ptr, but we don't know which one
-    escaped_local_blks.clear();
-    escaped_local_blks.resize(numLocals(), true);
-    break;
   }
 }
 
