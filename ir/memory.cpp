@@ -883,6 +883,13 @@ void Memory::AliasSet::setMayAliasUpTo(bool local, unsigned limit,
   }
 }
 
+void Memory::AliasSet::setFullAlias(bool islocal) {
+  auto &v = (islocal ? local : non_local);
+  auto sz = v.size();
+  v.clear();
+  v.resize(sz, true);
+}
+
 void Memory::AliasSet::setNoAlias(bool islocal, unsigned bid) {
   (islocal ? local : non_local)[bid] = false;
 }
@@ -1004,6 +1011,9 @@ Memory::MemStore* Memory::MemStore::mkIf(const expr &cond, MemStore *then,
   st->size.emplace(cond);
   st->next = then;
   st->els = els;
+  st->alias = then->alias;
+  st->alias.setFullAlias(false);
+  st->alias.setFullAlias(true);
   auto ret = st.get();
   mem_store_holder.emplace_back(move(st));
   return ret;
@@ -1066,14 +1076,14 @@ void Memory::MemStore::print(std::ostream &os) const {
         break;
     }
 
-    if (st->next) {
-      todo.push_back(st->next);
+    if (st->next)
       os << "\nSuccessor: #" << get_id(st->next);
-    }
     if (st->els) {
       todo.push_back(st->els);
       os << "\nElse: #" << get_id(st->els);
     }
+    if (st->next)
+      todo.push_back(st->next);
     os << "\n\n-----------------------------------------------------------\n";
   } while (!todo.empty());
 }
@@ -1311,6 +1321,13 @@ StateValue Memory::load(const Pointer &ptr, unsigned bytes, set<expr> &undef,
 
     StateValue poison_byte(expr::mkUInt(0, bytes_per_load * 8), false);
     bool added_undef_vars = false;
+
+    if (!st.alias.intersects(alias)) {
+      for (unsigned i = 0; i < num_loads; ++i) {
+        val.emplace_back(v1 ? (*v1)[i] : poison_byte);
+      }
+      continue;
+    }
 
     // TODO: optimize full stores to GC unreachable nodes?
     auto store = [&](unsigned i, const StateValue &v) {
@@ -1573,8 +1590,8 @@ Memory::Memory(State &state) : state(&state), escaped_local_blks(*this) {
 
   if (numNonlocals() > 0) {
     auto st = make_unique<MemStore>(*this, "init_mem");
-    st->alias.setMayAliasUpTo(false, has_null_block + num_consts_src,
-                              num_nonlocals_src - 1);
+    st->alias.setMayAliasUpTo(false, num_nonlocals_src - 1,
+                              has_null_block + num_consts_src);
     store(nullopt, nullptr, 1u << 31, move(st));
 
     non_local_block_liveness = mk_liveness_array();
@@ -1676,6 +1693,10 @@ void Memory::mkAxioms(const Memory &tgt) const {
   locals_fit(tgt);
 }
 
+void Memory::cleanGlobals() {
+  mem_store_holder.clear();
+}
+
 void Memory::resetGlobals() {
   next_global_bid = has_null_block;
   next_local_bid = 0;
@@ -1686,11 +1707,12 @@ void Memory::resetGlobals() {
 
 void Memory::syncWithSrc(const Memory &src) {
   assert(src.state->isSource() && !state->isSource());
-  resetGlobals();
+  next_local_bid = 0;
+  ptr_next_idx = 0;
+  next_ptr_input = 0;
   // The bid of tgt global starts with num_nonlocals_src
   next_global_bid = num_nonlocals_src;
   next_nonlocal_bid = src.next_nonlocal_bid;
-  // TODO: copy alias info for fn return ptrs from src?
 }
 
 void Memory::markByVal(unsigned bid) {
@@ -1826,8 +1848,8 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) {
     } else {
       auto mem = make_unique<MemStore>(*this, uf_name.c_str());
       mem->alias = escaped_local_blks;
-      mem->alias.setMayAliasUpTo(false, has_null_block + num_consts_src,
-                                next_nonlocal_bid);
+      mem->alias.setMayAliasUpTo(false, next_nonlocal_bid - 1,
+                                 has_null_block + num_consts_src);
       store(nullopt, nullptr, 1u << 31, move(mem));
     }
   }
@@ -2303,15 +2325,13 @@ Memory::refined(const Memory &other, bool skip_constants,
   expr ret(true);
   set<expr> undef_vars;
 
-  auto nonlocal_used = [](const Memory &m, unsigned bid) {
-    return bid < m.next_nonlocal_bid;
-  };
+  // TODO: check that set of tgt written locs in set of src written locs
 
+  // TODO: check that written locs in src are refined by tgt
+
+#if 0
   unsigned bid = has_null_block + skip_constants * num_consts_src;
   for (; bid < num_nonlocals_src; ++bid) {
-    if (!nonlocal_used(*this, bid) && !nonlocal_used(other, bid))
-      continue;
-
     expr bid_expr = expr::mkUInt(bid, bits_for_bid);
     Pointer p(*this, bid_expr, offset);
     Pointer q(other, p());
@@ -2330,6 +2350,7 @@ Memory::refined(const Memory &other, bool skip_constants,
     }
     ret = c.implies(ret);
   }
+#endif
 
   return { move(ret), move(ptr), move(undef_vars) };
 }

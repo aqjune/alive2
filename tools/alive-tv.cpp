@@ -2,6 +2,7 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include "llvm_util/llvm2alive.h"
+#include "ir/init.h"
 #include "ir/memory.h"
 #include "smt/smt.h"
 #include "tools/transform.h"
@@ -250,6 +251,7 @@ static int cmpTypes(llvm::Type *TyL, llvm::Type *TyR,
 }
 
 static optional<smt::smt_initializer> smt_init;
+static optional<IR::initializer> ir_init;
 
 static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
                              llvm::Triple &targetTriple, unsigned &goodCount,
@@ -282,6 +284,7 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
     return;
   }
 
+  ir_init->reset();
   smt_init->reset();
   Transform t;
   t.src = move(*Func1);
@@ -320,6 +323,7 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
   }
 
   if (opt_bidirectional) {
+    ir_init->reset();
     smt_init->reset();
     Transform t2;
     t2.src = move(t.tgt);
@@ -431,9 +435,11 @@ convenient way to demonstrate an existing optimizer bug.
   }
 
   auto &DL = M1.get()->getDataLayout();
+  auto targetTriple = llvm::Triple(M1.get()->getTargetTriple());
 
   llvm_util::initializer llvm_util_init(cerr, DL);
   smt_init.emplace();
+  ir_init.emplace();
 
   unsigned goodCount = 0, badCount = 0, errorCount = 0;
 
@@ -442,12 +448,6 @@ convenient way to demonstrate an existing optimizer bug.
     auto SRC = findFunction(*M1, opt_src_fn);
     auto TGT = findFunction(*M1, opt_tgt_fn);
     if (SRC && TGT) {
-      auto &DL = M1.get()->getDataLayout();
-      auto targetTriple = llvm::Triple(M1.get()->getTargetTriple());
-
-      llvm_util::initializer llvm_util_init(cerr, DL);
-      smt_init.emplace();
-
       compareFunctions(*SRC, *TGT, targetTriple, goodCount, badCount,
                        errorCount);
       goto end;
@@ -498,6 +498,7 @@ end:
   if (opt_smt_stats)
     smt::solver_print_stats(cout);
 
+  ir_init.reset();
   smt_init.reset();
 
   if (opt_alias_stats)

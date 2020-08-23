@@ -2,6 +2,7 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include "llvm_util/llvm2alive.h"
+#include "ir/init.h"
 #include "ir/memory.h"
 #include "smt/smt.h"
 #include "smt/solver.h"
@@ -119,6 +120,7 @@ ostream *out;
 ofstream out_file;
 string report_filename;
 optional<smt::smt_initializer> smt_init;
+optional<IR::initializer> ir_init;
 optional<llvm_util::initializer> llvm_util_init;
 TransformPrintOpts print_opts;
 unordered_map<string, pair<Function, unsigned>> fns;
@@ -180,6 +182,7 @@ struct TVPass final : public llvm::FunctionPass {
     if (first)
       return false;
 
+    ir_init->reset();
     smt_init->reset();
     Transform t;
     t.src = move(old_fn);
@@ -268,6 +271,7 @@ struct TVPass final : public llvm::FunctionPass {
 
     llvm_util_init.emplace(*out, module.getDataLayout());
     smt_init.emplace();
+    ir_init.emplace();
     return false;
   }
 
@@ -283,6 +287,7 @@ struct TVPass final : public llvm::FunctionPass {
     }
 
     llvm_util_init.reset();
+    ir_init.reset();
     smt_init.reset();
     --initialized;
 
