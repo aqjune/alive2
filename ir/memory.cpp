@@ -1009,7 +1009,72 @@ Memory::MemStore* Memory::MemStore::mkIf(const expr &cond, MemStore *then,
 }
 
 void Memory::MemStore::print(std::ostream &os) const {
-  os << "TODO\n";
+  auto type_str = [](const auto st) {
+    switch (st->type) {
+      case INT_VAL: return "INT VAL";
+      case PTR_VAL: return "PTR VAL";
+      case CONST:   return "CONST";
+      case COPY:    return "COPY";
+      case FN:      return "FN";
+      case COND:    return "COND";
+    }
+    UNREACHABLE();
+  };
+
+  unsigned next_block_id = 0;
+  map<const MemStore*, unsigned> block_id;
+  auto get_id = [&](const auto st) {
+    auto [I, inserted] = block_id.try_emplace(st, 0);
+    if (inserted)
+      I->second = next_block_id++;
+    return I->second;
+  };
+
+  vector<const MemStore*> todo = { this };
+  set<const MemStore*> printed;
+  do {
+    auto st = todo.back();
+    todo.pop_back();
+    if (!printed.emplace(st).second)
+      continue;
+
+    os << "Store #" << get_id(st) << "  Type: " << type_str(st)
+       << "  Align: " << st->align;
+    if (st->ptr)
+      os << "\nPointer: " << *st->ptr;
+    if (st->size)
+      os << "\nSize: " << *st->size;
+    os << "\nAlias: ";
+    st->alias.print(os);
+
+    switch (st->type) {
+      case INT_VAL:
+      case PTR_VAL:
+      case CONST:
+        os << "\nValue: " << st->value;
+        break;
+      case FN:
+        os << "\nFN: " << st->uf_name;
+        break;
+      case COPY:
+        os << "\nSRC PTR: " << *st->ptr_src;
+        os << "\nSRC ALIAS: ";
+        st->src_alias.print(os);
+        break;
+      case COND:
+        break;
+    }
+
+    if (st->next) {
+      todo.push_back(st->next);
+      os << "\nSuccessor: #" << get_id(st->next);
+    }
+    if (st->els) {
+      todo.push_back(st->els);
+      os << "\nElse: #" << get_id(st->els);
+    }
+    os << "\n-----------------------------------------------------------\n\n";
+  } while (!todo.empty());
 }
 
 bool Memory::MemStore::operator<(const MemStore &rhs) const {
@@ -1170,7 +1235,7 @@ StateValue Memory::load(const Pointer &ptr, unsigned bytes, set<expr> &undef,
 
   auto alias = computeAliasing(ptr, bytes, align, false);
 
-  // TODO: optimize alignment for FN and realloc COPY nodes
+  // TODO: optimize alignment for realloc COPY nodes
   // TODO: skip consideration of type punning yielding poison nodes
   unsigned bytes_per_load = gcd(align, bytes);
   {
@@ -1247,6 +1312,7 @@ StateValue Memory::load(const Pointer &ptr, unsigned bytes, set<expr> &undef,
 
     // TODO: optimize full stores to GC unreachable nodes?
     auto store = [&](unsigned i, const StateValue &v) {
+      // FIXME: this condition is wrong for anything other than ptr reads
       auto cond = (ptr + i) == (*st.ptr + i);
       if (st.size)
         cond &= st.size->ugt(i);
@@ -1497,9 +1563,9 @@ Memory::Memory(State &state) : state(&state), escaped_local_blks(*this) {
 
   if (numNonlocals() > 0) {
     auto st = make_unique<MemStore>(*this, "init_mem");
-    st->alias.setMayAliasUpTo(has_null_block + num_consts_src,
+    st->alias.setMayAliasUpTo(false, has_null_block + num_consts_src,
                               num_nonlocals_src - 1);
-    store(nullopt, nullptr, 1, move(st));
+    store(nullopt, nullptr, 1u << 31, move(st));
 
     non_local_block_liveness = mk_liveness_array();
 
@@ -1744,15 +1810,15 @@ Memory::mkCallState(const vector<PtrInput> *ptr_inputs, bool nofree) {
           Pointer ptr(*this, ptr_in.val.value);
           auto mem = make_unique<MemStore>(*this, uf_name.c_str());
           mem->alias = computeAliasing(ptr, 1, 1, true);
-          store(ptr, nullptr, 1, move(mem));
+          store(ptr, nullptr, 1u << 31, move(mem));
         }
       }
     } else {
       auto mem = make_unique<MemStore>(*this, uf_name.c_str());
       mem->alias = escaped_local_blks;
-      mem->alias.setMayAliasUpTo(has_null_block + num_consts_src,
+      mem->alias.setMayAliasUpTo(false, has_null_block + num_consts_src,
                                 next_nonlocal_bid);
-      store(nullopt, nullptr, 1, move(mem));
+      store(nullopt, nullptr, 1u << 31, move(mem));
     }
   }
   st.store_seq_head = store_seq_head;

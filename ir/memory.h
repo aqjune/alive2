@@ -52,7 +52,6 @@ public:
   // Creates a non-pointer byte that has data and non_poison.
   // data and non_poison should have bits_byte bits.
   Byte(const Memory &m, const smt::expr &data, const smt::expr &non_poison);
-  Byte(const Memory &m, const StateValue &val);
 
   smt::expr isPtr() const;
   smt::expr ptrNonpoison() const;
