@@ -26,6 +26,7 @@ struct StateValue {
   StateValue trunc(unsigned bw_val, unsigned bw_np) const;
   StateValue zextOrTrunc(unsigned tobw) const;
   StateValue concat(const StateValue &other) const;
+  StateValue extract(unsigned high, unsigned low) const;
 
   bool isValid() const;
 

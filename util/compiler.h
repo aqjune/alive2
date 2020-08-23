@@ -42,6 +42,25 @@ struct const_strip_unique_ptr {
   const_iterator end() const   { return container.end(); }
 };
 
+
+template <typename T>
+class PtrDerefCmp {
+  T ptr;
+public:
+  PtrDerefCmp(T ptr) : ptr(ptr) {}
+
+  bool operator<(const PtrDerefCmp &rhs) const {
+    if (ptr && rhs.ptr)
+      return *ptr < *rhs.ptr;
+
+    // null < null     => false
+    // non-null < null => false
+    // null < non-null => true
+    return !ptr && rhs.ptr;
+  }
+};
+
+
 unsigned ilog2(uint64_t n);
 // if up_power2 is true, then we do +1 for powers of 2
 // e.g. ilog2_ceil(8, false) = 3 ; ilog2_ceil(8, true) = 4

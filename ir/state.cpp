@@ -240,9 +240,11 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     return vector<StateValue>(out_types.size());
   }
 
-  for (auto &v : ptr_inputs) {
-    if (!v.byval && !v.nocapture && !v.val.non_poison.isFalse())
-      memory.escapeLocalPtr(v.val.value);
+  if (writes_memory) {
+    for (auto &v : ptr_inputs) {
+      if (!v.byval && !v.nocapture && !v.val.non_poison.isFalse())
+        memory.escapeLocalPtr(v.val.value);
+    }
   }
 
   // TODO: this doesn't need to compare the full memory, just a subset of fields
@@ -255,7 +257,9 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
   if (inserted) {
     auto mk_val = [&](const Type &t, const string &name) {
       if (t.isPtrType())
-        return memory.mkFnRet(name.c_str(), I->first.args_ptr).first;
+        return
+          memory.mkFnRet(name.c_str(),
+                         writes_memory ? nullptr : &I->first.args_ptr).first;
 
       return expr::mkFreshVar(name.c_str(), t.getDummyValue(false).value);
     };
@@ -273,7 +277,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
       = { move(values), expr::mkFreshVar(ub_name.c_str(), false),
           writes_memory
             ? memory.mkCallState(argmemonly ? &I->first.args_ptr : nullptr,
-                               attrs.has(FnAttrs::NoFree))
+                                 attrs.has(FnAttrs::NoFree))
             : Memory::CallState(),
           true };
   } else {
