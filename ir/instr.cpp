@@ -2795,7 +2795,7 @@ void Memset::print(ostream &os) const {
 StateValue Memset::toSMT(State &s) const {
   auto &[vptr, np_ptr] = s[*ptr];
   auto &[vbytes, np_bytes] = s[*bytes];
-  s.addUB((vbytes != 0).implies(np_ptr));
+  s.addUB(np_ptr);
   s.addUB(np_bytes);
   s.getMemory().memset(vptr, s[*val].zextOrTrunc(8), vbytes, align,
                        s.getUndefVars());
@@ -2851,7 +2851,7 @@ StateValue Memcpy::toSMT(State &s) const {
   auto &[vdst, np_dst] = s[*dst];
   auto &[vsrc, np_src] = s[*src];
   auto &[vbytes, np_bytes] = s[*bytes];
-  s.addUB((vbytes != 0).implies(np_dst && np_src));
+  s.addUB(np_dst && np_src);
   s.addUB(np_bytes);
 
   if (vbytes.bits() > bits_size_t)
