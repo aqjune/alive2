@@ -17,6 +17,8 @@ extern unsigned num_globals_src;
 
 extern unsigned num_ptrinputs;
 
+extern unsigned num_fncalls_src;
+
 /// Number of non-constant globals introduced in tgt
 extern unsigned num_extra_nonconst_tgt;
 

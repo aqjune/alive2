@@ -37,6 +37,11 @@ static bool observes_addresses() {
   return IR::has_ptr2int || IR::has_int2ptr;
 }
 
+static unsigned bid_for_fnmem() {
+  assert(has_fncall);
+  return num_globals_src + num_ptrinputs + 1;
+}
+
 static unsigned zero_bits_offset() {
   assert(is_power2(bits_byte));
   return ilog2(bits_byte / 8);
@@ -1505,6 +1510,15 @@ void Memory::mkAxioms(const Memory &tgt) const {
 
   if (has_null_block)
     state->addAxiom(Pointer::mkNullPointer(*this).getAddress(false) == 0);
+
+  if (has_fncall) {
+    Pointer p(*this, bid_for_fnmem(), false);
+    unsigned bits = ilog2_ceil(num_fncalls_src, true);
+    unsigned bs = (bits + bits_byte - 1) / bits_byte * bits_byte / 8;
+    state->addAxiom(p.isBlockAligned(bits_byte / 8, true));
+    state->addAxiom(p.blockSize() == bs);
+    state->addAxiom(p.getAllocType() == Pointer::GLOBAL);
+  }
 
   // Non-local blocks are disjoint.
   // Ignore null pointer block
