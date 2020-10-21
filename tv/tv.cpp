@@ -42,7 +42,8 @@ using namespace std;
 namespace {
 
 llvm::cl::opt<bool> opt_error_fatal(
-  "tv-exit-on-error", llvm::cl::desc("Alive: exit on error"),
+  "tv-exit-on-error", llvm::cl::desc("Alive: exit on error "
+                                     "(clang plugin: do non-zero exit)"),
   llvm::cl::init(false));
 
 llvm::cl::opt<unsigned> opt_smt_to(
@@ -353,7 +354,11 @@ struct TVPass final : public llvm::FunctionPass {
         cerr << "Alive2: Transform doesn't verify; aborting!" << endl;
       else
         cerr << "Alive2: Transform doesn't verify!" << endl;
-      exit(1);
+
+      if (!is_clangtv || opt_error_fatal)
+        exit(1);
+      else
+        exit(0);
     }
     return false;
   }
