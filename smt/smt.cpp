@@ -71,7 +71,7 @@ bool hit_memory_limit() {
 }
 
 bool hit_half_memory_limit() {
-  return Z3_get_estimated_alloc_size() >= (z3_memory_limit / 2);
+  return Z3_get_estimated_alloc_size() >= (z3_memory_limit / 10);
 }
 
 void start_logging(const char *path) {
