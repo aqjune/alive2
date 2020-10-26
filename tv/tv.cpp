@@ -7,6 +7,7 @@
 #include "smt/solver.h"
 #include "tools/transform.h"
 #include "util/config.h"
+#include "util/stopwatch.h"
 #include "util/version.h"
 #include "llvm/ADT/Any.h"
 #include "llvm/ADT/Triple.h"
@@ -158,6 +159,7 @@ bool showed_stats = false;
 bool report_dir_created = false;
 bool has_failure = false;
 bool is_clangtv = false;
+float elapsed_time;
 
 
 struct TVPass final : public llvm::FunctionPass {
@@ -190,6 +192,7 @@ struct TVPass final : public llvm::FunctionPass {
       TLI = &getAnalysis<llvm::TargetLibraryInfoWrapperPass>().getTLI(F);
     }
 
+    StopWatch timer;
     auto [I, first] = fns.try_emplace(F.getName().str());
     bool fill_src = first | update_fn_src;
     auto fn =
@@ -209,8 +212,11 @@ struct TVPass final : public llvm::FunctionPass {
       if (fill_src) {
         I->second.src_tostr = move(fn_tostr);
       } else {
-        if (I->second.src_tostr == fn_tostr)
+        if (I->second.src_tostr == fn_tostr) {
+          timer.stop();
+          elapsed_time += timer.seconds();
           return false;
+        }
 
         I->second.tgt_tostr = move(fn_tostr);
       }
@@ -238,6 +244,9 @@ struct TVPass final : public llvm::FunctionPass {
       I->second.tgt_encode_io_fns_as_unknown &= encode_io_fns_as_unknown;
     }
 
+    timer.stop();
+    elapsed_time += timer.seconds();
+
     if (fill_src || skip_verify)
       return false;
 
@@ -247,6 +256,8 @@ struct TVPass final : public llvm::FunctionPass {
   bool verify(llvm::Function &F, ValidationUnit &unit) {
     if (!unit.tgt_filled)
       return false;
+
+    StopWatch watch;
 
     if (is_clangtv)
       unit.tgt.setFnCallValidFlag(unit.tgt_encode_io_fns_as_unknown);
@@ -287,6 +298,10 @@ struct TVPass final : public llvm::FunctionPass {
     unit.src_tostr = move(unit.tgt_tostr);
     unit.tgt_filled = false;
     unit.tgt_encode_io_fns_as_unknown = true;
+
+    watch.stop();
+    elapsed_time += watch.seconds();
+
     return false;
   }
 
@@ -391,6 +406,8 @@ struct TVPass final : public llvm::FunctionPass {
     llvm_util_init.reset();
     smt_init.reset();
     --initialized;
+
+    *out << "Elapsed time: " << elapsed_time << " s\n";
 
     if (has_failure) {
       if (opt_error_fatal)
