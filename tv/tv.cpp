@@ -270,6 +270,8 @@ struct TVPass final : public llvm::FunctionPass {
     TransformVerify verifier(t, false);
     if (!opt_succinct)
       t.print(*out, print_opts);
+    else
+      *out << "[" << F.getName().str() << "]\n";
 
     {
       auto types = verifier.getTypings();
