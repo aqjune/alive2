@@ -476,6 +476,9 @@ struct TVFinalizePass : public llvm::PassInfoMixin<TVFinalizePass> {
     if (opt_batch) {
       // Verify all pending function pairs
       for (auto &F: M) {
+        if (!fnsToVerify.empty() && !fnsToVerify.count(F.getName().str()))
+          continue;
+
         ScopedWatch timer([&] (const StopWatch &sw) {
           fns_elapsed_time[F.getName().str()] += sw.seconds();
         });
