@@ -711,6 +711,9 @@ static pair<expr, expr> is_dereferenceable(Pointer &p,
 // When bytes is 0, pointer is always derefenceable
 AndExpr Pointer::isDereferenceable(const expr &bytes0, unsigned align,
                                    bool iswrite) {
+  ScopedWatch scw([](const auto &sw) {
+    Instr::elapsed_times["isDereferenceable"] += sw.seconds();
+  });
   expr bytes_off = bytes0.zextOrTrunc(bits_for_offset);
   expr bytes = bytes0.zextOrTrunc(bits_size_t);
   DisjointExpr<expr> UB(expr(false)), is_aligned(expr(false)), all_ptrs;

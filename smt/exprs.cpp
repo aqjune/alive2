@@ -4,6 +4,8 @@
 #include "smt/exprs.h"
 #include "smt/smt.h"
 #include "util/compiler.h"
+#include "util/stopwatch.h"
+#include "ir/instr.h"
 #include <vector>
 
 using namespace std;
@@ -87,6 +89,11 @@ ostream &operator<<(ostream &os, const OrExpr &e) {
 template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
                                             bool unpack_concat,
                                             unsigned threshold) {
+
+  util::ScopedWatch scw([](const auto &sw) {
+    IR::Instr::elapsed_times["DisjointExpr"] += sw.seconds();
+  });
+
   assert(unpack_ite);
   vector<pair<expr, expr>> worklist = { {e, true} };
   expr cond, then, els, a, b;
