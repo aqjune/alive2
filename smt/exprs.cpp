@@ -87,8 +87,7 @@ ostream &operator<<(ostream &os, const OrExpr &e) {
 
 
 template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
-                                            bool unpack_concat,
-                                            unsigned threshold) {
+                                            bool unpack_concat) {
 
   util::ScopedWatch scw([](const auto &sw) {
     IR::Instr::elapsed_times["DisjointExpr"] += sw.seconds();
@@ -101,7 +100,7 @@ template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
 
   do {
     // Limit exponential growth
-    if ((worklist.size() + vals.size()) >= threshold ||
+    if ((worklist.size() + vals.size()) >= 32 ||
         hit_half_memory_limit()) {
       for (auto &[v, c] : worklist) {
         add(move(v), move(c));
@@ -117,10 +116,8 @@ template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
       worklist.emplace_back(move(els), c && !cond);
     }
     else if (unpack_concat && v.isConcat(a, b)) {
-      unsigned t = (worklist.size() + vals.size()) >= threshold ? 1 :
-                   threshold - (worklist.size() + vals.size());
-      DisjointExpr<expr> lhs(a, unpack_ite, unpack_concat, t);
-      DisjointExpr<expr> rhs(b, unpack_ite, unpack_concat, t);
+      DisjointExpr<expr> lhs(a, unpack_ite, unpack_concat);
+      DisjointExpr<expr> rhs(b, unpack_ite, unpack_concat);
       if (lhs.size() == 1 && rhs.size() == 1) {
         add(move(v), move(c));
         continue;
@@ -159,10 +156,7 @@ template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
       }
     }
     else if (unpack_concat && v.isExtract(a, high, low)) {
-      unsigned t = (worklist.size() + vals.size()) >= threshold ? 1 :
-                   threshold - (worklist.size() + vals.size());
-
-      DisjointExpr<expr> vals(a, unpack_ite, true, t);
+      DisjointExpr<expr> vals(a, unpack_ite, true);
       if (vals.size() == 1) {
         add(move(v), move(c));
         continue;

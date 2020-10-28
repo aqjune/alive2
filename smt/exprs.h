@@ -56,8 +56,7 @@ public:
   DisjointExpr(const T &default_val) : default_val(default_val) {}
   DisjointExpr(const std::optional<T> &default_val) : default_val(default_val){}
   DisjointExpr(T &&default_val) : default_val(std::move(default_val)) {}
-  DisjointExpr(const expr &e, bool unpack_ite, bool unpack_concat = false,
-               unsigned threshold = 32);
+  DisjointExpr(const expr &e, bool unpack_ite, bool unpack_concat = false);
 
   template <typename V, typename D>
   void add(V &&val, D &&domain) {
