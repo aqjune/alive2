@@ -980,7 +980,6 @@ Errors TransformVerify::verify(std::ostream &err_os) const {
                      tgt_state->returnVal(),
                      check_each_var);
   } catch (AliveException e) {
-    set_query_timeout(old_timeout);
     return move(e);
   }
   return errs;
