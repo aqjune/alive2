@@ -7,6 +7,7 @@
 #include "ir/value.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/stopwatch.h"
 #include <array>
 #include <numeric>
 #include <string>
@@ -1147,6 +1148,10 @@ void Memory::access(const Pointer &ptr, unsigned bytes, unsigned align,
                     bool write, Fn &fn) {
   assert(bytes % (bits_byte/8) == 0);
 
+  ScopedWatch scopedw([&](const StopWatch &sw) {
+    Memory::access_time += sw.seconds();
+  });
+
   AliasSet aliasing(*this);
   auto sz_local = aliasing.size(true);
   auto sz_nonlocal = aliasing.size(false);
@@ -1555,6 +1560,7 @@ void Memory::mkAxioms(const Memory &tgt) const {
   locals_fit(tgt);
 }
 
+float Memory::access_time;
 void Memory::resetGlobals() {
   next_global_bid = has_null_block;
   next_local_bid = 0;

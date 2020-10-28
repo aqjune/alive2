@@ -333,6 +333,7 @@ public:
 
   void mkAxioms(const Memory &other) const;
 
+  static float access_time;
   static void resetGlobals();
   void syncWithSrc(const Memory &src);
 
