@@ -137,7 +137,22 @@ template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
           }
 
           for (auto &[rhs_v, rhs_domain] : rhs) {
-            add(lhs_v.concat(rhs_v.subst(from, to).simplify()),
+            IR::Instr::elapsed_times["DisjointExpr subst_call_num"] += 1.0;
+            util::StopWatch subst_sw;
+            expr e = rhs_v.subst(from, to);
+            subst_sw.stop();
+            IR::Instr::elapsed_times["DisjointExpr subst"] += subst_sw.seconds();
+            IR::Instr::elapsed_times["DisjointExpr subst longest"] =
+              max(subst_sw.seconds(), IR::Instr::elapsed_times["DisjointExpr subst longest"]);
+
+            subst_sw = util::StopWatch();
+            e = e.simplify();
+            subst_sw.stop();
+            IR::Instr::elapsed_times["DisjointExpr simplify"] += subst_sw.seconds();
+            IR::Instr::elapsed_times["DisjointExpr simplify longest"] =
+            max(IR::Instr::elapsed_times["DisjointExpr simplify longest"], subst_sw.seconds());
+
+            add(lhs_v.concat(e),
                 c && lhs_domain && rhs_domain);
           }
         }
