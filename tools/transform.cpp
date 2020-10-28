@@ -249,6 +249,7 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
                    e.subst(var, false).simplify());
   }
 
+  StopWatch sw;
   // eliminate all quantified boolean vars; Z3 gets too slow with those
   auto qvars = qvars0;
   for (auto &var : qvars0) {
@@ -262,6 +263,10 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
     qvars.erase(var);
   }
 
+  sw.stop();
+  cerr << "preprocess: elim bool vars done (" << qvars0.size() << ") : "
+       << sw << "\n";
+
   if (config::disable_undef_input || undef_qvars.empty() ||
       hit_half_memory_limit())
     return expr::mkForAll(qvars, move(e));
@@ -271,8 +276,12 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
   map<expr, expr> instances2;
 
   for (auto &i : t.src.getInputs()) {
-    if (auto in = dynamic_cast<const Input*>(&i))
+    if (auto in = dynamic_cast<const Input*>(&i)) {
+      ScopedWatch scw([&](const auto &sw) {
+        cerr << "\tinstantiate " << i.getName() << ": " << sw << "\n";
+      });
       instantiate_undef(in, instances, instances2, i.getType(), 0);
+    }
   }
 
   expr insts(false);
