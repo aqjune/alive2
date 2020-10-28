@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <map>
 
 namespace IR {
 
@@ -18,6 +19,8 @@ protected:
   Instr(Type &type, std::string &&name) : Value(type, std::move(name)) {}
 
 public:
+  static std::map<std::string, float> elapsed_times;
+
   virtual std::vector<Value*> operands() const = 0;
   virtual bool propagatesPoison() const;
   virtual void rauw(const Value &what, Value &with) = 0;

@@ -9,6 +9,7 @@
 #include "smt/exprs.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/stopwatch.h"
 #include <functional>
 #include <sstream>
 
@@ -91,6 +92,9 @@ uint64_t getGlobalVarSize(const IR::Value *V) {
 
 
 namespace IR {
+
+map<string, float> Instr::elapsed_times;
+
 
 bool Instr::propagatesPoison() const {
   // be on the safe side
@@ -356,6 +360,10 @@ static StateValue fm_poison(State &s, expr a, const expr &ap,
 }
 
 StateValue BinOp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["binop"] += sw.seconds();
+  });
+
   bool vertical_zip = false;
   function<StateValue(const expr&, const expr&, const expr&, const expr&)>
     fn, scalar_op;
@@ -851,6 +859,10 @@ void UnaryOp::print(ostream &os) const {
 }
 
 StateValue UnaryOp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["unaryop"] += sw.seconds();
+  });
+
   function<StateValue(const expr&, const expr&)> fn;
 
   switch (op) {
@@ -984,6 +996,10 @@ void UnaryReductionOp::print(ostream &os) const {
 }
 
 StateValue UnaryReductionOp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["unaryredop"] += sw.seconds();
+  });
+
   auto &v = s[*val];
   auto vty = val->getType().getAsAggregateType();
   StateValue res;
@@ -1082,6 +1098,10 @@ void TernaryOp::print(ostream &os) const {
 }
 
 StateValue TernaryOp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["ternaryop"] += sw.seconds();
+  });
+
   auto &av = s[*a];
   auto &bv = s[*b];
   auto &cv = s[*c];
@@ -1181,6 +1201,10 @@ void ConversionOp::print(ostream &os) const {
 }
 
 StateValue ConversionOp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["conversionop"] += sw.seconds();
+  });
+
   auto v = s[*val];
   function<StateValue(expr &&, const Type &)> fn;
 
@@ -1366,6 +1390,10 @@ void Select::print(ostream &os) const {
 }
 
 StateValue Select::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["select"] += sw.seconds();
+  });
+
   auto &cv = s[*cond];
   auto &av = s[*a];
   auto &bv = s[*b];
@@ -1423,6 +1451,10 @@ void ExtractValue::print(ostream &os) const {
 }
 
 StateValue ExtractValue::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["extractvalue"] += sw.seconds();
+  });
+
   auto v = s[*val];
 
   Type *type = &val->getType();
@@ -1510,6 +1542,10 @@ static StateValue update_repack(Type *type,
 }
 
 StateValue InsertValue::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["insertvalue"] += sw.seconds();
+  });
+
   auto &sv = s[*val];
   auto &elem = s[*elt];
 
@@ -1699,6 +1735,10 @@ pack_return(State &s, Type &ty, vector<StateValue> &vals, const FnAttrs &attrs,
 }
 
 StateValue FnCall::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["fncall"] += sw.seconds();
+  });
+
   bool is_valid = valid == Valid ||
                   (valid == DependsOnFlag && s.getFn().getFnCallValidFlag());
   if (!is_valid) {
@@ -1821,6 +1861,10 @@ static StateValue build_icmp_chain(const expr &var,
 }
 
 StateValue ICmp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["icmp"] += sw.seconds();
+  });
+
   auto &a_eval = s[*a];
   auto &b_eval = s[*b];
   function<StateValue(const expr&, const expr&, Cond)> fn;
@@ -1931,6 +1975,10 @@ void FCmp::print(ostream &os) const {
 }
 
 StateValue FCmp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["fcmp"] += sw.seconds();
+  });
+
   auto &a_eval = s[*a];
   auto &b_eval = s[*b];
 
@@ -1995,6 +2043,10 @@ void Freeze::print(ostream &os) const {
 }
 
 StateValue Freeze::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["freeze"] += sw.seconds();
+  });
+
   auto &v = s[*val];
   s.resetUndefVars();
 
@@ -2076,6 +2128,10 @@ void Phi::print(ostream &os) const {
 }
 
 StateValue Phi::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["phi"] += sw.seconds();
+  });
+
   DisjointExpr<StateValue> ret;
   map<Value*, StateValue> cache;
 
@@ -2154,6 +2210,10 @@ void Branch::print(ostream &os) const {
 }
 
 StateValue Branch::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["branch"] += sw.seconds();
+  });
+
   if (cond) {
     auto &c = s.getAndAddPoisonUB(*cond, true);
     s.addCondJump(c.value, dst_true, *dst_false);
@@ -2206,6 +2266,10 @@ void Switch::print(ostream &os) const {
 }
 
 StateValue Switch::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["switch"] += sw.seconds();
+  });
+
   auto &val = s.getAndAddPoisonUB(*value, true);
   expr default_cond(true);
 
@@ -2270,6 +2334,10 @@ static void addUBForNoCaptureRet(State &s, const StateValue &svret,
 }
 
 StateValue Return::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["return"] += sw.seconds();
+  });
+
   // Encode nocapture semantics.
   StateValue retval;
 
@@ -2341,6 +2409,10 @@ void Assume::print(ostream &os) const {
 }
 
 StateValue Assume::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["assume"] += sw.seconds();
+  });
+
   switch (kind) {
   case AndNonPoison: {
     auto &v = s.getAndAddPoisonUB(*cond);
@@ -2438,6 +2510,10 @@ void Alloc::print(std::ostream &os) const {
 }
 
 StateValue Alloc::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["alloc"] += sw.seconds();
+  });
+
   auto sz = s.getAndAddPoisonUB(*size, true).value;
 
   if (mul) {
@@ -2500,6 +2576,10 @@ void Malloc::print(std::ostream &os) const {
 }
 
 StateValue Malloc::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["malloc"] += sw.seconds();
+  });
+
   auto &m = s.getMemory();
   auto &[sz, np_size] = s.getAndAddUndefs(*size);
   s.addUB(np_size);
@@ -2578,6 +2658,10 @@ void Calloc::print(std::ostream &os) const {
 }
 
 StateValue Calloc::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["calloc"] += sw.seconds();
+  });
+
   auto &[nm, np_num] = s.getAndAddUndefs(*num);
   auto &[sz, np_sz] = s.getAndAddUndefs(*size);
   s.addUB(np_num);
@@ -2629,6 +2713,10 @@ void StartLifetime::print(std::ostream &os) const {
 }
 
 StateValue StartLifetime::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["startlifetime"] += sw.seconds();
+  });
+
   auto &p = s.getAndAddPoisonUB(*ptr).value;
   s.getMemory().startLifetime(p);
   return {};
@@ -2665,6 +2753,10 @@ void Free::print(std::ostream &os) const {
 }
 
 StateValue Free::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["free"] += sw.seconds();
+  });
+
   auto &p = s.getAndAddPoisonUB(*ptr, true).value;
   // If not heaponly, don't encode constraints
   s.getMemory().free(p, !heaponly);
@@ -2734,6 +2826,10 @@ void GEP::print(std::ostream &os) const {
 }
 
 StateValue GEP::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["gep"] += sw.seconds();
+  });
+
   auto scalar = [&](const StateValue &ptrval,
                     vector<pair<unsigned, StateValue>> &offsets) -> StateValue {
     Pointer ptr(s.getMemory(), ptrval.value);
@@ -2842,6 +2938,10 @@ void Load::print(std::ostream &os) const {
 }
 
 StateValue Load::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["load"] += sw.seconds();
+  });
+
   auto &p = s.getAndAddPoisonUB(*ptr).value;
   auto [sv, ub] = s.getMemory().load(p, getType(), align);
   s.addUB(move(ub));
@@ -2884,6 +2984,10 @@ void Store::print(std::ostream &os) const {
 }
 
 StateValue Store::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["store"] += sw.seconds();
+  });
+
   auto &p = s.getAndAddPoisonUB(*ptr).value;
   auto &v = s[*val];
   s.getMemory().store(p, v, val->getType(), align, s.getUndefVars());
@@ -2930,6 +3034,10 @@ void Memset::print(ostream &os) const {
 }
 
 StateValue Memset::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["memset"] += sw.seconds();
+  });
+
   auto &vbytes = s.getAndAddPoisonUB(*bytes).value;
 
   uint64_t n;
@@ -2993,6 +3101,10 @@ void Memcpy::print(ostream &os) const {
 }
 
 StateValue Memcpy::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["memcpy"] += sw.seconds();
+  });
+
   auto &vbytes = s.getAndAddPoisonUB(*bytes).value;
 
   uint64_t n;
@@ -3056,6 +3168,10 @@ void Memcmp::print(ostream &os) const {
 }
 
 StateValue Memcmp::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["memcmp"] += sw.seconds();
+  });
+
   auto &[vptr1, np1] = s[*ptr1];
   auto &[vptr2, np2] = s[*ptr2];
   auto &vnum = s.getAndAddPoisonUB(*num).value;
@@ -3153,6 +3269,10 @@ void Strlen::print(ostream &os) const {
 }
 
 StateValue Strlen::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["strlen"] += sw.seconds();
+  });
+
   auto &eptr = s.getAndAddPoisonUB(*ptr).value;
 
   Pointer p(s.getMemory(), eptr);
@@ -3197,6 +3317,10 @@ void ExtractElement::print(ostream &os) const {
 }
 
 StateValue ExtractElement::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["extractelement"] += sw.seconds();
+  });
+
   auto &[iv, ip] = s[*idx];
   auto vty = static_cast<const VectorType*>(v->getType().getAsAggregateType());
   expr inbounds = iv.ult(vty->numElementsConst());
@@ -3231,6 +3355,10 @@ void InsertElement::print(ostream &os) const {
 }
 
 StateValue InsertElement::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["insertelement"] += sw.seconds();
+  });
+
   auto &[iv, ip] = s[*idx];
   auto vty = static_cast<const VectorType*>(v->getType().getAsAggregateType());
   expr inbounds = iv.ult(vty->numElementsConst());
@@ -3269,6 +3397,10 @@ void ShuffleVector::print(ostream &os) const {
 }
 
 StateValue ShuffleVector::toSMT(State &s) const {
+  ScopedWatch scw([](const auto &sw) {
+    elapsed_times["shufflevector"] += sw.seconds();
+  });
+
   auto vty = v1->getType().getAsAggregateType();
   auto sz = vty->numElementsConst();
   vector<StateValue> vals;

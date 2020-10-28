@@ -886,7 +886,7 @@ TransformVerify::exec(ostream &err_os) const {
   StopWatch symexec_watch;
   t.tgt.syncDataWithSrc(t.src);
   calculateAndInitConstants(t);
-  Memory::access_time = 0;
+  Instr::elapsed_times.clear();
   State::resetGlobals();
 
   auto src_state = make_unique<State>(t.src, true);
@@ -900,7 +900,8 @@ TransformVerify::exec(ostream &err_os) const {
   if (symexec_watch.seconds() > 5) {
     err_os << "WARNING: slow vcgen! fn: " << t.src.getName() << ", took "
            << symexec_watch << '\n';
-    err_os << "\taccess time: " << Memory::access_time << "\n";
+    for (auto &[name, t] : Instr::elapsed_times)
+      err_os << "\t" << name << ": " << t << "\n";
   }
   return { move(src_state), move(tgt_state) };
 }
