@@ -953,8 +953,12 @@ Errors TransformVerify::verify(std::ostream &err_os) const {
   }
 
   Errors errs;
+  string old_timeout = get_query_timeout();
+  set_query_timeout("1");
+
   try {
     auto [src_state, tgt_state] = exec(err_os);
+    set_query_timeout(old_timeout);
 
     if (check_each_var) {
       for (auto &[var, val] : src_state->getValues()) {
@@ -979,6 +983,7 @@ Errors TransformVerify::verify(std::ostream &err_os) const {
                      tgt_state->returnVal(),
                      check_each_var);
   } catch (AliveException e) {
+    set_query_timeout(old_timeout);
     return move(e);
   }
   return errs;
