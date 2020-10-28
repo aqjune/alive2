@@ -881,7 +881,8 @@ TransformVerify::TransformVerify(Transform &t, bool check_each_var) :
   }
 }
 
-pair<unique_ptr<State>, unique_ptr<State>> TransformVerify::exec() const {
+pair<unique_ptr<State>, unique_ptr<State>>
+TransformVerify::exec(ostream &err_os) const {
   StopWatch symexec_watch;
   t.tgt.syncDataWithSrc(t.src);
   calculateAndInitConstants(t);
@@ -896,13 +897,13 @@ pair<unique_ptr<State>, unique_ptr<State>> TransformVerify::exec() const {
 
   symexec_watch.stop();
   if (symexec_watch.seconds() > 5) {
-    cerr << "WARNING: slow vcgen! fn: " << t.src.getName() << ", took "
-         << symexec_watch << '\n';
+    err_os << "WARNING: slow vcgen! fn: " << t.src.getName() << ", took "
+           << symexec_watch << '\n';
   }
   return { move(src_state), move(tgt_state) };
 }
 
-Errors TransformVerify::verify() const {
+Errors TransformVerify::verify(std::ostream &err_os) const {
   if (t.src.getFnAttrs() != t.tgt.getFnAttrs() ||
       !t.src.hasSameInputs(t.tgt)) {
     return { "Unsupported interprocedural transformation: signature mismatch "
@@ -941,7 +942,7 @@ Errors TransformVerify::verify() const {
 
   Errors errs;
   try {
-    auto [src_state, tgt_state] = exec();
+    auto [src_state, tgt_state] = exec(err_os);
 
     if (check_each_var) {
       for (auto &[var, val] : src_state->getValues()) {

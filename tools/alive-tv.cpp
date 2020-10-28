@@ -323,7 +323,7 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
     assert(types.hasSingleTyping());
   }
 
-  Errors errs = verifier.verify();
+  Errors errs = verifier.verify(cerr);
   bool result(errs);
   if (result) {
     if (errs.isUnsound()) {
@@ -348,7 +348,7 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
     TransformVerify verifier2(t2, false);
     t2.print(cout, print_opts);
 
-    if (Errors errs2 = verifier2.verify()) {
+    if (Errors errs2 = verifier2.verify(cerr)) {
       cout << "Reverse transformation doesn't verify!\n" << errs2 << endl;
     } else {
       cout << "Reverse transformation seems to be correct!\n\n";
