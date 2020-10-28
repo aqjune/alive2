@@ -1,12 +1,14 @@
 // Copyright (c) 2018-present The Alive2 Authors.
 // Distributed under the MIT license that can be found in the LICENSE file.
 
+#include "ir/instr.h"
 #include "ir/memory.h"
 #include "ir/globals.h"
 #include "ir/state.h"
 #include "ir/value.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/stopwatch.h"
 #include <array>
 #include <numeric>
 #include <string>
@@ -2025,10 +2027,21 @@ pair<StateValue, AndExpr>
 Memory::load(const expr &p, const Type &type, unsigned align) {
   assert(!memory_unused());
 
+  StopWatch sw;
   Pointer ptr(*this, p);
   auto ubs = ptr.isDereferenceable(getStoreByteSize(type), align, false);
+  sw.stop();
+  Instr::elapsed_times["load_1"] += sw.seconds();
+
+  sw = StopWatch();
   set<expr> undef_vars;
   auto ret = load(ptr, type, undef_vars, align);
+  sw.stop();
+  Instr::elapsed_times["load_2"] += sw.seconds();
+
+  ScopedWatch scw([](const auto &sw) {
+    Instr::elapsed_times["load_3"] += sw.seconds();
+  });
   return { state->rewriteUndef(move(ret), undef_vars), move(ubs) };
 }
 
