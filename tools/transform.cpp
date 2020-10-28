@@ -896,7 +896,8 @@ pair<unique_ptr<State>, unique_ptr<State>> TransformVerify::exec() const {
 
   symexec_watch.stop();
   if (symexec_watch.seconds() > 5) {
-    cerr << "WARNING: slow vcgen! Took " << symexec_watch << '\n';
+    cerr << "WARNING: slow vcgen! fn: " << t.src.getName() << ", took "
+         << symexec_watch << '\n';
   }
   return { move(src_state), move(tgt_state) };
 }
