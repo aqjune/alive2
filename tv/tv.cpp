@@ -475,8 +475,13 @@ struct TVFinalizePass : public llvm::PassInfoMixin<TVFinalizePass> {
                               llvm::ModuleAnalysisManager &FAM) {
     if (opt_batch) {
       // Verify all pending function pairs
-      for (auto &F: M)
+      for (auto &F: M) {
+        ScopedWatch timer([&] (const StopWatch &sw) {
+          fns_elapsed_time[F.getName().str()] += sw.seconds();
+        });
+
         TVPass().verify(F);
+      }
     }
 
     if (!finalized) {
