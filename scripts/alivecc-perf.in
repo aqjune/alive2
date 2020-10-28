@@ -13,7 +13,7 @@ else
   exit -1
 fi
 
-@LLVM_BINARY_DIR@/bin/$EXE \
+perf record -g @LLVM_BINARY_DIR@/bin/$EXE \
   -fpass-plugin=@CMAKE_BINARY_DIR@/tv/tv.so -fexperimental-new-pass-manager \
   -Xclang -load -Xclang @CMAKE_BINARY_DIR@/tv/tv.so -mllvm -tv-smt-stats \
   -mllvm -tv-report-dir=/opt/devel/juneyoung.lee/aliveresults/temp \
