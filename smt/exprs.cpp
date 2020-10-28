@@ -143,7 +143,7 @@ template<> DisjointExpr<expr>::DisjointExpr(const expr &e, bool unpack_ite,
               max(subst_sw.seconds(), IR::Instr::elapsed_times["DisjointExpr subst longest"]);
 
             subst_sw = util::StopWatch();
-            e = e.simplify();
+            e = e.simplify(1);
             subst_sw.stop();
             IR::Instr::elapsed_times["DisjointExpr simplify"] += subst_sw.seconds();
             IR::Instr::elapsed_times["DisjointExpr simplify longest"] =
