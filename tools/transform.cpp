@@ -278,7 +278,7 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
   for (auto &i : t.src.getInputs()) {
     if (auto in = dynamic_cast<const Input*>(&i)) {
       ScopedWatch scw([&](const auto &sw) {
-        cerr << "\tinstantiate " << i.getName() << ": " << sw << "\n";
+        cerr << "\tinstantiate " << i.getName() << ": instances size: " << instances.size() << ", " << sw << " sec\n";
       });
       instantiate_undef(in, instances, instances2, i.getType(), 0);
     }
@@ -953,12 +953,9 @@ Errors TransformVerify::verify(std::ostream &err_os) const {
   }
 
   Errors errs;
-  string old_timeout = get_query_timeout();
-  set_query_timeout("1");
 
   try {
     auto [src_state, tgt_state] = exec(err_os);
-    set_query_timeout(old_timeout);
 
     if (check_each_var) {
       for (auto &[var, val] : src_state->getValues()) {
