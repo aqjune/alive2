@@ -260,7 +260,7 @@ expr expr::mkFreshVar(const char *prefix, const expr &type) {
 expr expr::some(const expr &type) {
   if (type.isBool())
     return expr(false);
-  return mkNumber(type.bits() == 1 ? "0" : "3", type);
+  return mkNumber(type.isBV() && type.bits() == 1 ? "0" : "3", type);
 }
 
 expr expr::IntSMin(unsigned bits) {
