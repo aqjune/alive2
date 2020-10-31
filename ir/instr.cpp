@@ -1639,10 +1639,11 @@ static void unpack_inputs(State &s, Value &argv, Type &ty,
       if (argflag.has(ParamAttrs::Dereferenceable))
         s.addUB(p.isDereferenceable(argflag.derefBytes, bits_byte / 8, false));
 
+      expr np = value.non_poison;
       if (argflag.has(ParamAttrs::NonNull))
-        s.addUB(p.isNonZero());
+        np &= p.isNonZero();
 
-      ptr_inputs.emplace_back(StateValue(p.release(), move(value.non_poison)),
+      ptr_inputs.emplace_back(StateValue(p.release(), move(np)),
                               argflag.has(ParamAttrs::ByVal),
                               argflag.has(ParamAttrs::NoCapture));
     } else {
@@ -1688,11 +1689,13 @@ pack_return(State &s, Type &ty, vector<StateValue> &vals, const FnAttrs &attrs,
   bool isNonNull = attrs.has(FnAttrs::NonNull);
   if (ty.isPtrType() && (isDeref || isNonNull)) {
     Pointer p(s.getMemory(), ret.value);
-    s.addUB(ret.non_poison);
-    if (isDeref)
+    if (isDeref) {
+      s.addUB(ret.non_poison);
       s.addUB(p.isDereferenceable(attrs.getDerefBytes()));
-    if (isNonNull)
-      s.addUB(p.isNonZero());
+    }
+    if (isNonNull) {
+      ret.non_poison &= p.isNonZero();
+    }
   }
 
   return ret;
@@ -2294,7 +2297,7 @@ StateValue Return::toSMT(State &s) const {
         s.addUB(p.getAllocType() != Pointer::STACK);
     }
     if (isNonNull) {
-      s.addUB(p.isNonZero());
+      retval.non_poison &= p.isNonZero();
     }
   }
 

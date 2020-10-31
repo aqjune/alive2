@@ -4,7 +4,8 @@ define void @src(i8* %p) {
 }
 
 define void @tgt(i8* %p) {
-  unreachable
+  call void @f(i8* undef)
+  ret void
 }
 
 declare void @f(i8* nonnull)

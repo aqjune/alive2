@@ -26,7 +26,7 @@ public:
 
   // Returns true if it's UB for the argument to be poison / have a poison elem.
   bool poisonImpliesUB() const
-  { return has(NonNull) || has(Dereferenceable) || has(NoUndef) || has(ByVal); }
+  { return has(Dereferenceable) || has(NoUndef) || has(ByVal); }
 
    // Returns true if it is UB for the argument to be (partially) undef.
   bool undefImpliesUB() const;
@@ -57,7 +57,7 @@ public:
 
   // Returns true if returning poison or an aggregate having a poison is UB
   bool poisonImpliesUB() const
-  { return has(NonNull) || has(Dereferenceable) || has(NoUndef); }
+  { return has(Dereferenceable) || has(NoUndef); }
 
   // Returns true if returning (partially) undef is UB
   bool undefImpliesUB() const;
