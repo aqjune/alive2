@@ -1629,7 +1629,8 @@ expr Memory::PtrInput::operator==(const PtrInput &rhs) const {
 
 pair<expr,expr>
 Memory::mkFnRet(const char *name, const vector<PtrInput> &ptr_inputs) {
-  bool has_local = escaped_local_blks.numMayAlias(true);
+  //bool has_local = escaped_local_blks.numMayAlias(true);
+  bool has_local = false;
 
   unsigned bits_bid = has_local ? bits_for_bid : bits_shortbid();
   expr var
