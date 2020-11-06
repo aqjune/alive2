@@ -501,8 +501,7 @@ llvmGetPassPluginInfo() {
     [](llvm::PassBuilder &PB) {
       is_clangtv = true;
       PB.registerPipelineStartEPCallback(
-          [](llvm::ModulePassManager &MPM,
-             llvm::PassBuilder::OptimizationLevel) {
+          [](llvm::ModulePassManager &MPM) {
             MPM.addPass(TVInitPass());
           });
       PB.registerOptimizerLastEPCallback(
