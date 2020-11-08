@@ -432,9 +432,48 @@ static auto getPhiPredecessors(const Function &F) {
   return map;
 }
 
+void Function::breakCriticalEdges() {
+  unordered_map<const BasicBlock *, unsigned> num_preds;
+  for (unsigned i = 0; i < BB_order.size(); ++i) {
+    set<const BasicBlock *> tgts_set;
+    for (auto &dst: BB_order[i]->targets())
+      // remove duplicated targets
+      tgts_set.insert(&dst);
+
+    for (auto *dst: tgts_set)
+      ++num_preds[dst];
+  }
+
+  unsigned crit_block_id = 0;
+  vector<BasicBlock *> bbs = BB_order;
+  for (auto &src: bbs) {
+    auto src_targets = src->targets();
+
+    set<BasicBlock *> src_targetbbs;
+    for (auto &bb: src_targets)
+      src_targetbbs.insert(const_cast<BasicBlock *>(&bb));
+
+    if (src_targetbbs.size() <= 1)
+      continue;
+
+    for (auto *dst: src_targetbbs) {
+      if (num_preds[dst] <= 1)
+        continue;
+
+      // Create a new block
+      auto &newbb = getBB(string("#crit_block_" + to_string(crit_block_id++)));
+      newbb.addInstr(make_unique<Branch>(*dst));
+      src->replaceTargetWith(dst, &newbb);
+      dst->replacePhiSrcWith(src->getName(), newbb.getName());
+    }
+  }
+}
+
 void Function::unroll(unsigned k) {
   if (k == 0)
     return;
+
+  breakCriticalEdges();
 
   LoopAnalysis la(*this);
   auto &roots = la.getRoots();

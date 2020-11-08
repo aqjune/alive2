@@ -177,6 +177,7 @@ public:
                          const std::vector<std::string_view> &src_glbs);
 
   void topSort();
+  void breakCriticalEdges();
   void unroll(unsigned k);
 
   void print(std::ostream &os, bool print_header = true) const;
