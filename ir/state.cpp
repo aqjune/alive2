@@ -749,9 +749,9 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     auto call_data_pair
       = calls_fn.try_emplace(
           { move(inputs), move(ptr_inputs),
-            reads_memory ? analysis.ranges_fn_calls
+            reads_memory || writes_memory ? analysis.ranges_fn_calls
                          : State::ValueAnalysis::FnCallRanges(),
-            reads_memory ? memory : Memory(*this),
+            reads_memory || writes_memory ? memory : Memory(*this),
             reads_memory, argmemonly });
     auto &I = call_data_pair.first;
     bool inserted = call_data_pair.second;
