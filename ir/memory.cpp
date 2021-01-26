@@ -21,10 +21,10 @@ using namespace util;
   // 2. global vars in source: 1 ~ num_globals_src
   // 3. pointer argument inputs:
   //      num_globals_src + 1 ~ num_globals_src + num_ptrinputs
-  // 4. a block reserved for encoding the memory touched by calls:
-  //      num_globals_src + num_ptrinputs + 1
-  // 5. nonlocal blocks returned by loads/calls:
-  //      num_globals_src + num_ptrinputs + 2 ~ num_nonlocals_src - 1:
+  // 4. nonlocal blocks returned by loads/calls:
+  //      num_globals_src + num_ptrinputs + 1 ~ num_nonlocals_src - 2:
+  // 5. a block reserved for encoding the memory touched by calls:
+  //      num_nonlocals_src - 1
   // 6. global vars in target only:
   //      num_nonlocals_src ~ num_nonlocals - 1
 
@@ -958,7 +958,7 @@ Memory::Memory(State &state) : state(&state), escaped_local_blks(*this) {
     return;
 
   next_nonlocal_bid
-    = has_null_block + num_globals_src + num_ptrinputs + has_fncall;
+    = has_null_block + num_globals_src + num_ptrinputs;
 
   if (has_null_block)
     non_local_block_val.emplace_back();
@@ -1712,7 +1712,9 @@ Memory::refined(const Memory &other, bool skip_constants,
   set<expr> undef_vars;
 
   auto nonlocal_used = [](const Memory &m, unsigned bid) {
-    return bid < m.next_nonlocal_bid;
+    return bid < m.next_nonlocal_bid ||
+        // The bid of an extra block for function calls >= next_nonlocal_bid
+        (has_fncall && bid == num_nonlocals_src - 1);
   };
 
   unsigned bid = has_null_block + skip_constants * num_consts_src;
