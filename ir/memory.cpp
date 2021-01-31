@@ -1209,7 +1209,7 @@ expr Memory::PtrInput::operator==(const PtrInput &rhs) const {
 
 expr Memory::mkFnRet(const char *name, const vector<PtrInput> &ptr_inputs) {
   assert(has_fncall);
-  bool has_local = hasEscapedLocals();
+  bool has_local = false; //hasEscapedLocals();
 
   unsigned bits_bid = has_local ? bits_for_bid : Pointer::bitsShortBid();
   expr var
