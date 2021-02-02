@@ -6,7 +6,7 @@
 #include "ir/globals.h"
 #include "ir/state.h"
 #include "util/compiler.h"
-
+#include <iostream>
 using namespace IR;
 using namespace smt;
 using namespace std;
@@ -77,10 +77,13 @@ Pointer::Pointer(const Memory &m, expr repr) : m(m), p(move(repr)) {
 }
 
 Pointer::Pointer(const Memory &m, unsigned bid, bool local)
+  : Pointer(m, bid, expr::mkUInt(0, bits_for_offset), local) {}
+
+Pointer::Pointer(const Memory &m, unsigned bid, const expr &ofs, bool local)
   : m(m), p(
     prepend_if(expr::mkUInt(local, 1),
                expr::mkUInt(bid, bitsShortBid())
-                 .concat_zeros(bits_for_offset + bits_for_ptrattrs),
+                 .concat(ofs.concat_zeros(bits_for_ptrattrs)),
                hasLocalBit())) {
   assert((local && bid < m.numLocals()) || (!local && bid < num_nonlocals));
   assert(p.bits() == totalBits());
@@ -140,7 +143,9 @@ bool Pointer::hasLocalBit() {
 }
 
 expr Pointer::isLocal(bool simplify) const {
-  if (m.numLocals() == 0)
+  if (simplify && m.numLocals() == 0)
+    return false;
+  else if (num_locals_src == 0 && num_locals_tgt == 0)
     return false;
   if (m.numNonlocals() == 0)
     return true;
@@ -163,6 +168,17 @@ expr Pointer::isLocal(bool simplify) const {
   }
 
   return local == 1;
+}
+
+bool Pointer::localOrNull() const {
+  if (!has_null_block)
+    return isLocal().isTrue();
+
+  expr cond, then, els;
+  if (p.isIf(cond, then, els))
+    return Pointer(m, then).localOrNull() || Pointer(m, els).localOrNull();
+
+   return isLocal().isTrue() || (*this == mkNullPointer(m)).isTrue();
 }
 
 expr Pointer::getBid() const {
@@ -461,17 +477,66 @@ expr Pointer::isHeapAllocated() const {
   return getAllocType().extract(1, 1) == 1;
 }
 
-expr Pointer::refined(const Pointer &other) const {
-  // This refers to a block that was malloc'ed within the function
-  expr local = getAllocType() == other.getAllocType();
-  local &= blockSize() == other.blockSize();
-  local &= getOffset() == other.getOffset();
-  // Attributes are ignored at refinement.
+expr Pointer::encodeLoadedByteRefined(
+    const Pointer &other,
+    set<expr> &undef_vars) const {
+  // FIXME: this should be somehow passed..!
+  auto b1 = const_cast<Memory *>(&m)->load(*this, undef_vars);
+  auto b2 = const_cast<Memory *>(&other.m)->load(other, undef_vars);
+  return b1.refined(b2);
+}
 
-  // TODO: this induces an infinite loop
-  //local &= block_refined(other);
+expr Pointer::encodeLocalPtrRefinement(
+    const Pointer &other,
+    set<expr> &undefs,
+    bool use_mapping_only) const {
+  expr tgt_bid = other.getShortBid();
+  auto &local_map = other.m.local_blk_map;
 
-  return expr::mkIf(isLocal(), move(local), *this == other) &&
+  expr ofs = expr::mkFreshVar("localblk_ofs", expr::mkUInt(0, bits_for_offset));
+  Pointer this_ofs = *this + ofs;
+  Pointer other_ofs = other + ofs;
+
+  // If other block is mapped to nothing, return true if use_mapping_only is set
+  expr blkrefined = use_mapping_only ? true :
+                    m.localBlockRefined(*this, other, undefs);
+
+  expr alloca_zero = false;
+  if (has_zero_size_alloca)
+    alloca_zero = other.getAllocType() == STACK && other.blockSize() == 0;
+
+  return
+    other.isLocal() && getOffset() == other.getOffset() &&
+    expr::mkIf(
+      move(alloca_zero),
+      // LLVM does not preserve mapping between zero sized allocas
+      isLocal() && getAllocType() == STACK && blockSize() == 0,
+      expr::mkIf(
+          local_map.has(tgt_bid),
+          local_map.get(tgt_bid) == getShortBid(),
+          blkrefined));
+}
+
+expr Pointer::encodeByValArgRefinement(
+    const Pointer &other, set<expr> &undefs, unsigned size) const {
+  // byval at caller does not need to make mapping between local blocks, because
+  // it internally copies its contents and creates a new block.
+  //   f(byval p);   -> f(byval q) ; no need to map p to q
+  expr ofs = expr::mkFreshVar("localblk_ofs", expr::mkUInt(0, bits_for_offset));
+  Pointer this_ofs = *this + ofs;
+  Pointer other_ofs = other + ofs;
+
+  return ofs.ugt(expr::mkUInt(size, ofs))
+      .implies(this_ofs.encodeLoadedByteRefined(other_ofs, undefs));
+}
+
+expr Pointer::refined(const Pointer &other, bool use_mapping_only) const {
+  expr islocal = isLocal();
+  expr local = false;
+  set<expr> undefs;
+  if (!islocal.isFalse() && !other.isLocal().isFalse())
+    local = encodeLocalPtrRefinement(other, undefs, use_mapping_only);
+  return expr::mkIf(move(islocal), move(local), *this == other) &&
          isBlockAlive().implies(other.isBlockAlive());
 }
 
@@ -482,28 +547,13 @@ expr Pointer::fninputRefined(const Pointer &other, set<expr> &undef,
   expr size2 = other.blockSizeOffsetT();
   expr off2 = other.getOffsetSizet();
 
-  // TODO: check block value for byval_bytes
   if (byval_bytes)
-    return true;
+    return encodeByValArgRefinement(other, undef, byval_bytes);
 
-  expr local
-    = expr::mkIf(isHeapAllocated(),
-                 getAllocType() == other.getAllocType() &&
-                   off == off2 && size == size2,
-
-                 expr::mkIf(off.sge(0),
-                            off2.sge(0) &&
-                              expr::mkIf(off.ule(size),
-                                         off2.ule(size2) && off2.uge(off) &&
-                                           (size2 - off2).uge(size - off),
-                                         off2.ugt(size2) && off == off2 &&
-                                           size2.uge(size)),
-                            // maintains same dereferenceability before/after
-                            off == off2 && size2.uge(size)));
-  local = (other.isLocal() || other.isByval()) && local;
-
-  // TODO: this induces an infinite loop
-  // block_refined(other);
+  expr islocal = isLocal();
+  expr local = false;
+  if (!islocal.isFalse() && !other.isLocal().isFalse())
+    local = encodeLocalPtrRefinement(other, undef, false);
 
   return expr::mkIf(isLocal(), local, *this == other) &&
          isBlockAlive().implies(other.isBlockAlive());

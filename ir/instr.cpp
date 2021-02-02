@@ -12,7 +12,7 @@
 #include <functional>
 #include <numeric>
 #include <sstream>
-
+#include <iostream>
 using namespace smt;
 using namespace util;
 using namespace std;
@@ -1809,7 +1809,7 @@ StateValue FnCall::toSMT(State &s) const {
   auto check_access = [&]() {
     if (attrs.has(FnAttrs::ArgMemOnly)) {
       for (auto &p : ptr_inputs) {
-        if (!p.byval) {
+        if (!p.byval_size) {
           Pointer ptr(s.getMemory(), p.val.value);
           s.addUB(p.val.non_poison.implies(ptr.isLocal()));
         }
@@ -2417,7 +2417,13 @@ StateValue Return::toSMT(State &s) const {
   else
     retval = s[*val];
 
-  s.addUB(s.getMemory().checkNocapture());
+  auto &m = s.getMemory();
+  s.addUB(m.checkNocapture());
+  m.markAllocasAsDead();
+  m.saturateEscapedLocalBlkSet();
+  if (!s.isSource())
+    m.setLocalBlkMap(Memory::LocalBlkMap::create(s, {}));
+
   check_ret_attributes(s, retval, getType(), attrs);
 
   if (attrs.has(FnAttrs::NoReturn))

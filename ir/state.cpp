@@ -7,7 +7,7 @@
 #include "smt/smt.h"
 #include "util/errors.h"
 #include <cassert>
-
+#include <iostream>
 using namespace smt;
 using namespace util;
 using namespace std;
@@ -696,7 +696,7 @@ expr State::FnCallInput::refinedBy(
     auto restrict_ptrs2 = argmemonly ? &args_ptr2 : nullptr;
     auto data = m.refined(m2, true, restrict_ptrs, restrict_ptrs2);
     refines.add(get<0>(data));
-    for (auto &v : get<2>(data))
+    for (auto &v : get<3>(data))
       s.addFnQuantVar(v);
   }
 
@@ -749,9 +749,10 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
 
   if (writes_memory) {
     for (auto &v : ptr_inputs) {
-      if (!v.byval && !v.nocapture && !v.val.non_poison.isFalse())
+      if (!v.byval_size && !v.nocapture && !v.val.non_poison.isFalse())
         memory.escapeLocalPtr(v.val.value);
     }
+    memory.saturateEscapedLocalBlkSet();
   }
 
   vector<StateValue> retval;
@@ -761,8 +762,8 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     auto &calls_fn = fn_call_data[name];
     auto call_data_pair
       = calls_fn.try_emplace(
-          { move(inputs), move(ptr_inputs),
-            reads_memory ? analysis.ranges_fn_calls
+          { move(inputs), ptr_inputs,
+            reads_memory || writes_memory ? analysis.ranges_fn_calls
                          : State::ValueAnalysis::FnCallRanges(),
             reads_memory ? memory : Memory(*this),
             reads_memory, argmemonly });
@@ -787,7 +788,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
 
       string ub_name = name + "#ub";
       I->second
-        = { move(values), expr::mkFreshVar(ub_name.c_str(), false),
+        = { move(values), out_types, expr::mkFreshVar(ub_name.c_str(), false),
             writes_memory
               ? memory.mkCallState(name,
                                    argmemonly ? &I->first.args_ptr : nullptr,
