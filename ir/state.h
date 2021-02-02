@@ -150,6 +150,7 @@ private:
 
   struct FnCallOutput {
     std::vector<StateValue> retvals;
+    std::vector<Type *> retvals_ty;
     smt::expr ub;
     Memory::CallState callstate;
 

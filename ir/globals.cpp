@@ -33,6 +33,7 @@ bool has_ptr2int;
 bool has_malloc;
 bool has_free;
 bool has_alloca;
+bool has_zero_size_alloca;
 bool has_fncall;
 bool has_nocapture;
 bool has_readonly;

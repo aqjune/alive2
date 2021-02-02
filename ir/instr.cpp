@@ -11,7 +11,7 @@
 #include "util/compiler.h"
 #include <functional>
 #include <sstream>
-
+#include <iostream>
 using namespace smt;
 using namespace util;
 using namespace std;
@@ -1705,8 +1705,11 @@ static void unpack_inputs(State &s, Value &argv, Type &ty,
         np = true;
       }
 
+      unsigned byval_size = 0;
+      if (argflag.has(ParamAttrs::ByVal))
+        byval_size = argflag.blockSize;
       ptr_inputs.emplace_back(StateValue(p.release(), np && value.non_poison),
-                              argflag.has(ParamAttrs::ByVal),
+                              byval_size,
                               argflag.has(ParamAttrs::NoCapture));
     } else {
       inputs.emplace_back(move(value));
@@ -1810,7 +1813,7 @@ StateValue FnCall::toSMT(State &s) const {
   auto check_access = [&]() {
     if (attrs.has(FnAttrs::ArgMemOnly)) {
       for (auto &p : ptr_inputs) {
-        if (!p.byval) {
+        if (!p.byval_size) {
           Pointer ptr(s.getMemory(), p.val.value);
           s.addUB(p.val.non_poison.implies(ptr.isLocal()));
         }
@@ -2416,8 +2419,14 @@ StateValue Return::toSMT(State &s) const {
   else
     retval = s[*val];
 
-  s.addUB(s.getMemory().checkNocapture());
+  auto &m = s.getMemory();
+  s.addUB(m.checkNocapture());
   check_ret_attributes(s, retval, val->getType(), attrs);
+
+  m.markAllocasAsDead();
+  m.saturateEscapedLocalBlkSet();
+  if (!s.isSource())
+    m.setLocalBlkMap(Memory::LocalBlkMap::create(s, {}));
 
   bool isDeref = attrs.has(FnAttrs::Dereferenceable);
   bool isNonNull = attrs.has(FnAttrs::NonNull);
@@ -2425,7 +2434,7 @@ StateValue Return::toSMT(State &s) const {
 
   if (isDeref || isNonNull || isAlign) {
     assert(val->getType().isPtrType());
-    Pointer p(s.getMemory(), retval.value);
+    Pointer p(m, retval.value);
 
     if (isDeref) {
       s.addUB(p.isDereferenceable(attrs.derefBytes, attrs.align));

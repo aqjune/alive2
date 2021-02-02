@@ -659,7 +659,7 @@ PtrType::refines(State &src_s, State &tgt_s, const StateValue &src,
   Pointer q(tm, tgt.value);
 
   return { src.non_poison.implies(tgt.non_poison),
-           (src.non_poison && tgt.non_poison).implies(p.refined(q)) };
+           (src.non_poison && tgt.non_poison).implies(p.refined(q, true)) };
 }
 
 expr PtrType::mkInput(State &s, const char *name,

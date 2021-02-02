@@ -36,6 +36,15 @@ class Pointer {
                       const smt::expr &ret_type, bool src_name = false) const;
 
 public:
+  smt::expr encodeLoadedByteRefined(const Pointer &other,
+                                    std::set<smt::expr> &undefs) const;
+  smt::expr encodeLocalPtrRefinement(const Pointer &other,
+                                     std::set<smt::expr> &undefs,
+                                     bool use_local_mapping) const;
+  smt::expr encodeByValArgRefinement(const Pointer &otherByval,
+                                     std::set<smt::expr> &undefs,
+                                     unsigned byval_size) const;
+
   Pointer(const Memory &m, const smt::expr &bid, const smt::expr &offset,
           const smt::expr &attr);
   Pointer(const Memory &m, const char *var_name,
@@ -43,6 +52,7 @@ public:
           bool align = true, const ParamAttrs &attr = {});
   Pointer(const Memory &m, smt::expr p);
   Pointer(const Memory &m, unsigned bid, bool local);
+  Pointer(const Memory &m, unsigned bid, const smt::expr &ofs, bool local);
   Pointer(const Memory &m, const smt::expr &bid, const smt::expr &offset,
           const ParamAttrs &attr = {});
 
@@ -52,8 +62,10 @@ public:
   static unsigned bitsShortBid();
   static unsigned bitsShortOffset();
   static unsigned zeroBitsShortOffset();
+  static bool hasLocalBit();
 
   smt::expr isLocal(bool simplify = true) const;
+  bool localOrNull() const;
 
   smt::expr getBid() const;
   smt::expr getShortBid() const; // same as getBid but ignoring is_local bit
@@ -115,9 +127,11 @@ public:
 
   void stripAttrs();
 
-  smt::expr refined(const Pointer &other) const;
+  // If use_mapping_only is set, use local_blk_map & don't look into its bytes
+  // further
+  smt::expr refined(const Pointer &other, bool use_mapping_only = false) const;
   smt::expr fninputRefined(const Pointer &other, std::set<smt::expr> &undef,
-                           bool is_byval_arg) const;
+                           unsigned byval_size) const;
 
   const Memory& getMemory() const { return m; }
 
