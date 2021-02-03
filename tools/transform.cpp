@@ -946,6 +946,7 @@ pair<unique_ptr<State>, unique_ptr<State>> TransformVerify::exec() const {
   t.tgt.syncDataWithSrc(t.src);
   calculateAndInitConstants(t);
   State::resetGlobals();
+  exit(0);
 
   auto src_state = make_unique<State>(t.src, true);
   auto tgt_state = make_unique<State>(t.tgt, false);
