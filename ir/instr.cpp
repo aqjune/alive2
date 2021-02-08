@@ -370,7 +370,9 @@ StateValue BinOp::toSMT(State &s) const {
         Input::match(b, bv, b_notundef, b_undefvar)) {
       a = av;
       b = bv;
-      non_poison &= a_notundef && b_notundef;
+      // It is allowed for one of them to be undef
+      // (e.g., 'add nsw undef, 0' doesn't overflow)
+      non_poison &= a_notundef || b_notundef;
     }
   };
 
