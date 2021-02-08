@@ -362,15 +362,30 @@ StateValue BinOp::toSMT(State &s) const {
   bool vertical_zip = false;
   function<StateValue(const expr&, const expr&, const expr&, const expr&)>
     fn, scalar_op;
+  auto poison_if_fullyundef = [](expr &a, expr &b, expr &non_poison) {
+    expr av, a_notundef, a_undefvar, bv, b_notundef, b_undefvar;
+    // If a and b are both inputs, strip undef mask away and put 'isundef == 0'
+    // conditions at non_poison
+    if (Input::match(a, av, a_notundef, a_undefvar) &&
+        Input::match(b, bv, b_notundef, b_undefvar)) {
+      a = av;
+      b = bv;
+      non_poison &= a_notundef && b_notundef;
+    }
+  };
 
   switch (op) {
   case Add:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       expr non_poison = true;
-      if (flags & NSW)
+      if (flags & NSW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.add_no_soverflow(b);
-      if (flags & NUW)
+      }
+      if (flags & NUW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.add_no_uoverflow(b);
+      }
       return { a + b, move(non_poison) };
     };
     break;
@@ -378,10 +393,14 @@ StateValue BinOp::toSMT(State &s) const {
   case Sub:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       expr non_poison = true;
-      if (flags & NSW)
+      if (flags & NSW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.sub_no_soverflow(b);
-      if (flags & NUW)
+      }
+      if (flags & NUW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.sub_no_uoverflow(b);
+      }
       return { a - b, move(non_poison) };
     };
     break;
@@ -389,10 +408,14 @@ StateValue BinOp::toSMT(State &s) const {
   case Mul:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       expr non_poison = true;
-      if (flags & NSW)
+      if (flags & NSW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.mul_no_soverflow(b);
-      if (flags & NUW)
+      }
+      if (flags & NUW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.mul_no_uoverflow(b);
+      }
       return { a * b, move(non_poison) };
     };
     break;
@@ -401,8 +424,10 @@ StateValue BinOp::toSMT(State &s) const {
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       expr non_poison = true;
       div_ub(s, a, b, ap, bp, true);
-      if (flags & Exact)
+      if (flags & Exact) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison = a.sdiv_exact(b);
+      }
       return { a.sdiv(b), move(non_poison) };
     };
     break;
@@ -411,8 +436,10 @@ StateValue BinOp::toSMT(State &s) const {
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       expr non_poison = true;
       div_ub(s, a, b, ap, bp, false);
-      if (flags & Exact)
+      if (flags & Exact) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.udiv_exact(b);
+      }
       return { a.udiv(b), move(non_poison) };
     };
     break;
@@ -434,10 +461,14 @@ StateValue BinOp::toSMT(State &s) const {
   case Shl:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       auto non_poison = b.ult(b.bits());
-      if (flags & NSW)
+      if (flags & NSW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.shl_no_soverflow(b);
-      if (flags & NUW)
+      }
+      if (flags & NUW) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.shl_no_uoverflow(b);
+      }
 
       return { a << b, move(non_poison) };
     };
@@ -446,8 +477,10 @@ StateValue BinOp::toSMT(State &s) const {
   case AShr:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       auto non_poison = b.ult(b.bits());
-      if (flags & Exact)
+      if (flags & Exact) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.ashr_exact(b);
+      }
       return { a.ashr(b), move(non_poison) };
     };
     break;
@@ -455,8 +488,10 @@ StateValue BinOp::toSMT(State &s) const {
   case LShr:
     fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
       auto non_poison = b.ult(b.bits());
-      if (flags & Exact)
+      if (flags & Exact) {
+        poison_if_fullyundef(a, b, non_poison);
         non_poison &= a.lshr_exact(b);
+      }
       return { a.lshr(b), move(non_poison) };
     };
     break;
