@@ -551,12 +551,6 @@ expr Pointer::isNull() const {
   return *this == mkNullPointer(m);
 }
 
-expr Pointer::isNonZero() const {
-  if (Memory::observesAddresses())
-    return getAddress() != 0;
-  return !isNull();
-}
-
 void Pointer::resetGlobals() {
   ptr_next_idx = 0;
 }
