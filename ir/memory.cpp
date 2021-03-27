@@ -1169,21 +1169,8 @@ expr Memory::mkInput(const char *name, const ParamAttrs &attrs) {
 }
 
 pair<expr, expr> Memory::mkUndefInput(const ParamAttrs &attrs) const {
-  bool nonnull = attrs.has(ParamAttrs::NonNull);
-  unsigned log_offset = ilog2_ceil(bits_for_offset, false);
-  unsigned bits_undef = bits_for_offset + nonnull * log_offset;
-  expr undef = expr::mkFreshVar("undef", expr::mkUInt(0, bits_undef));
-  expr offset = undef;
-
-  if (nonnull) {
-    expr var = undef.extract(log_offset - 1, 0);
-    expr one = expr::mkUInt(1, bits_for_offset);
-    expr shl = expr::mkIf(var.ugt(bits_for_offset-1),
-                          one,
-                          one << var.zextOrTrunc(bits_for_offset));
-    offset = undef.extract(bits_undef - 1, log_offset) | shl;
-  }
-  Pointer p(*this, expr::mkUInt(0, bits_for_bid), offset, attrs);
+  expr undef = expr::mkFreshVar("undef", expr::mkUInt(0, bits_for_offset));
+  Pointer p(*this, expr::mkUInt(0, bits_for_bid), undef, attrs);
   return { p.release(), move(undef) };
 }
 
