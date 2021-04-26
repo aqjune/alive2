@@ -219,9 +219,10 @@ struct TVLegacyPass final : public llvm::ModulePass {
     if (!opt_always_verify) {
       // Compare Alive2 IR and skip if syntactically equal
       if (src_tostr == toString(t.tgt)) {
-        if (!opt_quiet)
+        if (!opt_quiet) {
           t.print(*out, print_opts);
-        *out << "Transformation seems to be correct! (syntactically equal)\n\n";
+          *out << "Transformation seems to be correct! (syntactically equal)\n\n";
+        }
         return false;
       }
     }
