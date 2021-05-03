@@ -19,6 +19,7 @@ bool debug = false;
 unsigned src_unroll_cnt = 0;
 unsigned tgt_unroll_cnt = 0;
 unsigned max_offset_bits = 64;
+bool interesting_results_only = false;
 
 ostream &dbg() {
   return *debug_os;

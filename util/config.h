@@ -30,6 +30,8 @@ extern unsigned tgt_unroll_cnt;
 // maximum.
 extern unsigned max_offset_bits;
 
+extern bool interesting_results_only;
+
 std::ostream &dbg();
 void set_debug(std::ostream &os);
 

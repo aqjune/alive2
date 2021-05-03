@@ -20,6 +20,7 @@ smt::solver_print_queries(opt_smt_verbose);
 smt::solver_tactic_verbose(opt_tactic_verbose);
 config::debug = opt_debug;
 config::max_offset_bits = opt_max_offset_in_bits;
+config::interesting_results_only = opt_interesting_results_only;
 
 func_names.insert(opt_funcs.begin(), opt_funcs.end());
 
