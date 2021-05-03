@@ -143,6 +143,8 @@ static void readBatchedOpts() {
 struct TVLegacyPass final : public llvm::ModulePass {
   static char ID;
   bool skip_verify = false;
+  // Verify this pair only if there exists src
+  bool onlyif_src_exists = false;
   const function<llvm::TargetLibraryInfo*(llvm::Function&)> *TLI_override
     = nullptr;
 
@@ -179,6 +181,10 @@ struct TVLegacyPass final : public llvm::ModulePass {
     }
 
     auto [I, first] = fns.try_emplace(F.getName().str());
+    if (onlyif_src_exists && first) {
+      fns.erase(I);
+      return false;
+    }
 
     auto fn = llvm2alive(F, *TLI, first ? vector<string_view>()
                                         : I->second.fn.getGlobalVarNames());
@@ -224,7 +230,8 @@ struct TVLegacyPass final : public llvm::ModulePass {
       if (src_tostr == toString(t.tgt)) {
         if (!opt_quiet)
           t.print(*out, print_opts);
-        *out << "Transformation seems to be correct! (syntactically equal)\n\n";
+        *out << "Transformation seems to be correct! (syntactically equal): ";
+        *out << t.src.getName() << "\n\n";
         return false;
       }
     }
@@ -289,12 +296,14 @@ struct TVLegacyPass final : public llvm::ModulePass {
     }
 
     if (Errors errs = verifier.verify()) {
-      *out << "Transformation doesn't verify!\n" << errs << endl;
+      *out << "Transformation doesn't verify!: " << t.src.getName() << "\n"
+           << errs << endl;
       has_failure |= errs.isUnsound();
       if (opt_error_fatal && has_failure)
         finalize();
     } else {
-      *out << "Transformation seems to be correct!\n\n";
+      *out << "Transformation seems to be correct!: " << t.src.getName()
+           << "\n\n";
     }
 
     // Regenerate tgt because preprocessing may have changed it
@@ -492,20 +501,24 @@ struct TVPass : public llvm::PassInfoMixin<TVPass> {
           // Prepare src. Do this by setting skip_pass to true.
           assert(get<1>(itm) == pass_name);
           tv.skip_verify = true;
+          *out << "-- FROM THE BITCODE AFTER "
+               << n_beg << ". " << get<1>(itm) << "\n";
         } else {
           assert(get<3>(itm) == pass_name);
-
-          *out << "-- FROM THE BITCODE AFTER "
-               << n_beg << ". " << get<1>(itm)
-               << "\n   TO THE BITCODE AFTER "
+          *out << "-- TO THE BITCODE AFTER "
                << n_end << ". " << get<3>(itm) << "\n";
 
+          // Translate LLVM to Alive2 only if there exists src
+          tv.onlyif_src_exists = true;
           batched_opts.pop();
         }
 
         tv.TLI_override = &get_TLI;
         // If skip_pass is true, this updates fns map only.
         tv.runOnModule(M);
+
+        if (validate_pairs)
+          *out << "-- DONE: " << n_end << ". " << pass_name << "\n";
 
       } else {
         assert((int)count < n_end);

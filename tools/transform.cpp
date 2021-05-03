@@ -120,7 +120,8 @@ static bool error(Errors &errs, const State &src_state, const State &tgt_state,
   }
 
   if (r.isError()) {
-    errs.add("SMT Error: " + r.getReason(), false);
+    errs.add("SMT Error: " + src_state.getFn().getName() + ": " + r.getReason(),
+             false);
     return false;
   }
 
