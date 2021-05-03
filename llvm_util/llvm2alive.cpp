@@ -976,11 +976,11 @@ public:
   RetTy visitInstruction(llvm::Instruction &i) { return error(i); }
 
   RetTy error(llvm::Instruction &i) {
-    *out << "ERROR: Unsupported instruction: " << i << '\n';
+    *out << "ERROR: " << f.getName().str() << ": Unsupported instruction: " << i << '\n';
     return {};
   }
   RetTy errorAttr(const llvm::Attribute &attr) {
-    *out << "ERROR: Unsupported attribute: " << attr.getAsString() << '\n';
+    *out << "ERROR: " << f.getName().str() << ": Unsupported attribute: " << attr.getAsString() << '\n';
     return {};
   }
 
@@ -1048,7 +1048,7 @@ public:
         break;
 
       default:
-        *out << "ERROR: Unsupported metadata: " << ID << '\n';
+        *out << "ERROR: " << f.getName().str() << ": Unsupported metadata: " << ID << '\n';
         return false;
       }
     }
@@ -1232,7 +1232,7 @@ public:
     // don't even bother if number of BBs or instructions is huge..
     if (distance(f.begin(), f.end()) > 5000 ||
         f.getInstructionCount() > 10000) {
-      *out << "ERROR: Function is too large\n";
+      *out << "ERROR: " << f.getName().str() << ": Function is too large\n";
       return {};
     }
 
@@ -1358,7 +1358,7 @@ public:
       auto gv = getGlobalVariable(string(gvname));
       if (!gv) {
         // global variable removed or renamed
-        *out << "ERROR: Unsupported interprocedural transformation\n";
+        *out << "ERROR: " << f.getName().str() << ": Unsupported interprocedural transformation\n";
         return {};
       }
       // If gvname already exists in tgt, get_operand will immediately return
@@ -1378,7 +1378,7 @@ public:
 
       auto storedval = get_operand(gv->getInitializer());
       if (!storedval) {
-        *out << "ERROR: Unsupported constant: " << *gv->getInitializer()
+        *out << "ERROR: " << f.getName().str() << ": Unsupported constant: " << *gv->getInitializer()
              << '\n';
         return {};
       }
