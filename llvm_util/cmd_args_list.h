@@ -141,4 +141,8 @@ llvm::cl::opt<unsigned> opt_max_offset_in_bits(
                  "offset computations exceed the maximum."),
   llvm::cl::cat(alive_cmdargs));
 
+llvm::cl::opt<bool> opt_interesting_results_only(
+  LLVM_ARGS_PREFIX "interesting-results-only",
+  llvm::cl::desc("Print interesting results only"),
+  llvm::cl::init(false), llvm::cl::cat(alive_cmdargs));
 }
